@@ -1,0 +1,19 @@
+{
+  "id": "mama_taxi",
+  "name": "🚕 Мама вызывай",
+  "status": "active",
+  "preview": "",
+  "prompt": {
+    "scene": "Slavic city bus stop, traditional urban environment with Eastern European details",
+    "duration": "8s",
+    "visual": "A large bus is parked along a cobblestone road at a Slavic-style bus stop decorated with folk patterns. Three elderly Slavic grandmothers in bright, traditional dresses dance joyfully while playing balalaika and accordion. They sing in Russian: '{name} ждал большой автобус, нужно жиром потрясти'. The camera starts focused on the grandmothers, showing their lively faces, colorful dresses, and instruments. It then slowly pans right, revealing a very overweight Slavic {gender_child} named {name}. {gender_pronoun} wears a tight T-shirt and sweatpants, energetically jumping and shaking {gender_possessive} body in a humorous, exaggerated way. Behind {gender_object}, {gender_possessive} mother in a floral dress watches with a mix of concern and disbelief. Finally, the camera pulls slightly back (not too far), framing everyone together — the grandmothers, {name}, {gender_possessive} mother, and the bus — in hyperrealistic detail.",
+    "style": "hyperrealism",
+    "audio": {
+      "grandmothers": "Sing rhythmically in Russian: '{name} ждал большой автобус, нужно жиром потрясти'. Folk-rap instrumental style with balalaika and accordion.",
+      "child": "Shouts in Russian: 'Не поеду я на этом! Мама, вызывай такси!'. Spoken with exaggerated emotion.",
+      "ambient": "Street noise, folk instruments mixing with rhythmic beat, child's jumping and shouting. No subtitles or text on screen."
+    },
+    "notes": "{name} — очень {gender_full_description}. Бабушки — славянки в национальной одежде, играют на балалайке и аккордеоне. Когда бабушки поют, {name} танцует и подпрыгивает. Когда говорит {name}, бабушки замолкают и только играют на инструментах. Камера: сначала фокус на бабушках, затем плавно переводится к {name} и его маме, после чего немного отъезжает назад, показывая всех вместе."
+  },
+  "duration": 8
+}
