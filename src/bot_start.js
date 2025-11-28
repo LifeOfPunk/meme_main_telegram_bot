@@ -1074,7 +1074,7 @@ bot.action('confirm_gen', async (ctx) => {
         await ctx.reply(MESSAGES.GENERATION_STARTED(memeName), {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '✨ Создать еще', callback_data: 'create_video' }],
+                    [{ text: '🎬 Создать еще', callback_data: 'create_video' }],
                     [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
                 ]
             }
