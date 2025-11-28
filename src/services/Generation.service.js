@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { UserService } from './User.service.js';
+import { YouTubeService } from './YouTube.service.js';
 import { errorLogger } from './ErrorLogger.service.js';
 import { WATERMARK_IMAGE_PATH } from '../config.js';
 import { execFile } from 'child_process';
@@ -23,6 +24,7 @@ export class GenerationService {
         this.modelName = 'sora-2-text-to-video';
         this.bot = bot; // Telegram bot instance для отправки уведомлений
         this.userService = new UserService(); // Сервис для работы с квотами
+        this.youtubeService = new YouTubeService(); // Сервис для загрузки на YouTube
     }
 
     async ensureDir(dirPath) {
@@ -218,9 +220,29 @@ export class GenerationService {
                 
                 console.log(`✅ Generation ${generationId} completed successfully`);
                 
+                // Автозагрузка на YouTube (если включена)
+                let youtubeUrl = null;
+                if (process.env.YOUTUBE_AUTO_UPLOAD === 'true') {
+                    try {
+                        console.log(`📺 Auto-uploading video to YouTube...`);
+                        const youtubeResult = await this.uploadToYouTube(generation, videoUrl);
+                        if (youtubeResult && youtubeResult.success) {
+                            youtubeUrl = youtubeResult.videoUrl;
+                            await this.updateGeneration(generationId, {
+                                youtubeUrl: youtubeUrl,
+                                youtubeVideoId: youtubeResult.videoId
+                            });
+                            console.log(`✅ Video uploaded to YouTube: ${youtubeUrl}`);
+                        }
+                    } catch (ytErr) {
+                        console.error(`⚠️ YouTube upload failed: ${ytErr.message}`);
+                    }
+                }
+                
                 await this.notifyUser(generation.chatId || generation.userId, {
                     status: 'success',
                     videoUrl: videoUrl,
+                    youtubeUrl: youtubeUrl,
                     // localVideoPath: localPath,
                     generationId: generationId
                 });
@@ -548,6 +570,7 @@ export class GenerationService {
                             reply_markup: {
                                 inline_keyboard: [
                                     [{ text: '👥 Поделиться с другом', switch_inline_query: data.generationId }],
+                                    [{ text: '📺 Выложить на YouTube', callback_data: `upload_youtube_${data.generationId}` }],
                                     [{ text: '🎬 Сгенерировать еще', callback_data: 'create_video' }],
                                     [{ text: '�  Главное меню', callback_data: 'main_menu' }]
                                 ]
@@ -578,6 +601,7 @@ export class GenerationService {
                             reply_markup: {
                                 inline_keyboard: [
                                     [{ text: '👥 Поделиться с другом', switch_inline_query: data.generationId }],
+                                    [{ text: '📺 Выложить на YouTube', callback_data: `upload_youtube_${data.generationId}` }],
                                     [{ text: '🎬 Сгенерировать еще', callback_data: 'create_video' }],
                                     [{ text: '�  Главное меню', callback_data: 'main_menu' }]
                                 ]
@@ -596,13 +620,11 @@ export class GenerationService {
                     console.log(`💰 Refunded quota for user ${generation.userId}`);
                 }
                 
-                // Формируем упрощённое сообщение об ошибке
-                const errorId = data.errorId || 'UNKNOWN';
+                // Импортируем сообщение из конфига
+                const { MESSAGES } = await import('../config.js');
                 await this.bot.telegram.sendMessage(
                     chatId,
-                    `❌ К сожалению, не удалось создать видео.\n\n` +
-                    `Ошибка номер ${errorId}. Обратитесь к менеджеру @aiviral_manager с номером ошибки.\n\n` +
-                    `💰 Ваша генерация возвращена на баланс.`,
+                    MESSAGES.GENERATION_FAILED,
                     {
                         reply_markup: {
                             inline_keyboard: [
@@ -720,6 +742,65 @@ export class GenerationService {
             }
         } catch (err) {
             console.error('❌ Error in recoverPendingGenerations:', err.message);
+        }
+    }
+
+    /**
+     * Загрузка видео на YouTube
+     */
+    async uploadToYouTube(generation, videoUrl) {
+        try {
+            // Скачиваем видео во временный файл
+            const tempDir = path.join(process.cwd(), 'temp');
+            await this.ensureDir(tempDir);
+            
+            const tempVideoPath = path.join(tempDir, `${generation.generationId}.mp4`);
+            
+            console.log(`📥 Downloading video for YouTube upload...`);
+            const response = await axios({
+                method: 'GET',
+                url: videoUrl,
+                responseType: 'stream'
+            });
+            
+            const writer = fs.createWriteStream(tempVideoPath);
+            response.data.pipe(writer);
+            
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
+            
+            console.log(`✅ Video downloaded to ${tempVideoPath}`);
+            
+            // Формируем метаданные для YouTube
+            const metadata = {
+                title: generation.memeName 
+                    ? `${generation.memeName} - ${generation.name || 'MeeMee'}`
+                    : `Видео с ${generation.name || 'MeeMee'}`,
+                description: generation.prompt 
+                    ? `${generation.prompt}\n\nСоздано с помощью @${process.env.BOT_NAME || 'meemee_official_bot'}`
+                    : `Создано с помощью @${process.env.BOT_NAME || 'meemee_official_bot'}`,
+                tags: ['мем', 'видео', 'meemee', 'ai', 'нейросеть'],
+                categoryId: process.env.YOUTUBE_CATEGORY || '23',
+                privacyStatus: process.env.YOUTUBE_PRIVACY || 'public'
+            };
+            
+            // Загружаем на YouTube (используем userId из generation)
+            const result = await this.youtubeService.uploadVideo(generation.userId, tempVideoPath, metadata);
+            
+            // Удаляем временный файл
+            try {
+                await fs.promises.unlink(tempVideoPath);
+                console.log(`🗑️ Temporary file deleted`);
+            } catch (unlinkErr) {
+                console.error(`⚠️ Failed to delete temp file: ${unlinkErr.message}`);
+            }
+            
+            return result;
+        } catch (err) {
+            console.error(`❌ YouTube upload error: ${err.message}`);
+            throw err;
         }
     }
 }

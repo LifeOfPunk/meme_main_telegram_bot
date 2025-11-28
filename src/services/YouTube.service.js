@@ -1,170 +1,146 @@
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
+import { YouTubeAuthService } from './YouTubeAuth.service.js';
 
 export class YouTubeService {
     constructor() {
-        this.oauth2Client = null;
-        this.youtube = null;
-        this.isInitialized = false;
+        this.clientId = process.env.YOUTUBE_CLIENT_ID;
+        this.clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+        this.redirectUri = `${process.env.WEBHOOK_DOMAIN || 'https://api.aiviral-agency.com'}/youtube-oauth`;
+        this.authService = new YouTubeAuthService();
     }
 
     /**
-     * Инициализация YouTube API
+     * Инициализация YouTube API для конкретного пользователя
      */
-    async initialize() {
+    async initializeForUser(userId) {
         try {
-            const clientId = process.env.YOUTUBE_CLIENT_ID;
-            const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-            const refreshToken = process.env.YOUTUBE_REFRESH_TOKEN;
-
-            if (!clientId || !clientSecret || !refreshToken) {
+            if (!this.clientId || !this.clientSecret) {
                 console.log('⚠️ YouTube API credentials not configured');
-                return false;
+                return null;
             }
 
-            this.oauth2Client = new google.auth.OAuth2(
-                clientId,
-                clientSecret,
-                'urn:ietf:wg:oauth:2.0:oob'
-            );
+            const tokens = await this.authService.getUserTokens(userId);
 
-            this.oauth2Client.setCredentials({
-                refresh_token: refreshToken
-            });
+            if (!tokens || !tokens.refresh_token) {
+                console.log(`⚠️ User ${userId} not authorized for YouTube`);
+                return null;
+            }
 
-            this.youtube = google.youtube({
+            const oauth2Client = new google.auth.OAuth2(this.clientId, this.clientSecret, this.redirectUri);
+
+            oauth2Client.setCredentials(tokens);
+
+            const youtube = google.youtube({
                 version: 'v3',
-                auth: this.oauth2Client
+                auth: oauth2Client,
             });
 
-            this.isInitialized = true;
-            console.log('✅ YouTube API initialized');
-            return true;
+            console.log(`✅ YouTube API initialized for user ${userId}`);
+            return youtube;
         } catch (error) {
-            console.error('❌ Failed to initialize YouTube API:', error.message);
-            return false;
+            console.error(`❌ Failed to initialize YouTube API for user ${userId}:`, error.message);
+            return null;
         }
     }
 
     /**
-     * Загрузка видео на YouTube
+     * Загрузка видео на YouTube для конкретного пользователя
+     * @param {number} userId - ID пользователя Telegram
      * @param {string} videoPath - путь к видео файлу
      * @param {object} metadata - метаданные видео
      * @returns {Promise<object>} - результат загрузки
      */
-    async uploadVideo(videoPath, metadata = {}) {
+    async uploadVideo(userId, videoPath, metadata = {}) {
         try {
-            if (!this.isInitialized) {
-                const initialized = await this.initialize();
-                if (!initialized) {
-                    return { error: 'YouTube API not configured' };
-                }
+            const youtube = await this.initializeForUser(userId);
+
+            if (!youtube) {
+                return {
+                    error: 'User not authorized for YouTube',
+                    needsAuth: true,
+                };
             }
 
-            console.log('📤 Uploading video to YouTube:', videoPath);
+            console.log(`📤 Uploading video to YouTube for user ${userId}:`, videoPath);
 
             const {
                 title = 'Мем видео',
                 description = 'Создано с помощью MeeMee Bot',
                 tags = ['мем', 'видео', 'meemee'],
                 categoryId = '23', // Comedy
-                privacyStatus = 'public' // public, private, unlisted
+                privacyStatus = 'public', // public, private, unlisted
             } = metadata;
 
             const fileSize = fs.statSync(videoPath).size;
             console.log(`📊 Video size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
 
-            const response = await this.youtube.videos.insert({
+            const response = await youtube.videos.insert({
                 part: ['snippet', 'status'],
                 requestBody: {
                     snippet: {
                         title,
                         description,
                         tags,
-                        categoryId
+                        categoryId,
                     },
                     status: {
                         privacyStatus,
-                        selfDeclaredMadeForKids: false
-                    }
+                        selfDeclaredMadeForKids: false,
+                    },
                 },
                 media: {
-                    body: fs.createReadStream(videoPath)
-                }
+                    body: fs.createReadStream(videoPath),
+                },
             });
 
             const videoId = response.data.id;
             const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-            console.log('✅ Video uploaded to YouTube:', videoUrl);
+            console.log(`✅ Video uploaded to YouTube for user ${userId}:`, videoUrl);
 
             return {
                 success: true,
                 videoId,
                 videoUrl,
-                title: response.data.snippet.title
+                title: response.data.snippet.title,
             };
-
         } catch (error) {
-            console.error('❌ Failed to upload video to YouTube:', error.message);
+            console.error(`❌ Failed to upload video to YouTube for user ${userId}:`, error.message);
             return {
                 error: error.message,
-                details: error.response?.data || error
+                details: error.response?.data || error,
             };
         }
     }
 
     /**
-     * Получение информации о канале
+     * Получение информации о канале пользователя
      */
-    async getChannelInfo() {
-        try {
-            if (!this.isInitialized) {
-                await this.initialize();
-            }
-
-            const response = await this.youtube.channels.list({
-                part: ['snippet', 'statistics'],
-                mine: true
-            });
-
-            if (response.data.items && response.data.items.length > 0) {
-                const channel = response.data.items[0];
-                return {
-                    id: channel.id,
-                    title: channel.snippet.title,
-                    subscribers: channel.statistics.subscriberCount,
-                    videos: channel.statistics.videoCount,
-                    views: channel.statistics.viewCount
-                };
-            }
-
-            return null;
-        } catch (error) {
-            console.error('❌ Failed to get channel info:', error.message);
-            return null;
-        }
+    async getChannelInfo(userId) {
+        return await this.authService.getUserChannelInfo(userId);
     }
 
     /**
      * Удаление видео с YouTube
      */
-    async deleteVideo(videoId) {
+    async deleteVideo(userId, videoId) {
         try {
-            if (!this.isInitialized) {
-                await this.initialize();
+            const youtube = await this.initializeForUser(userId);
+
+            if (!youtube) {
+                return { error: 'User not authorized for YouTube' };
             }
 
-            await this.youtube.videos.delete({
-                id: videoId
+            await youtube.videos.delete({
+                id: videoId,
             });
 
-            console.log('✅ Video deleted from YouTube:', videoId);
+            console.log(`✅ Video deleted from YouTube for user ${userId}:`, videoId);
             return { success: true };
-
         } catch (error) {
-            console.error('❌ Failed to delete video:', error.message);
+            console.error(`❌ Failed to delete video for user ${userId}:`, error.message);
             return { error: error.message };
         }
     }
@@ -172,26 +148,27 @@ export class YouTubeService {
     /**
      * Обновление метаданных видео
      */
-    async updateVideo(videoId, metadata) {
+    async updateVideo(userId, videoId, metadata) {
         try {
-            if (!this.isInitialized) {
-                await this.initialize();
+            const youtube = await this.initializeForUser(userId);
+
+            if (!youtube) {
+                return { error: 'User not authorized for YouTube' };
             }
 
-            const response = await this.youtube.videos.update({
+            const response = await youtube.videos.update({
                 part: ['snippet', 'status'],
                 requestBody: {
                     id: videoId,
                     snippet: metadata.snippet,
-                    status: metadata.status
-                }
+                    status: metadata.status,
+                },
             });
 
-            console.log('✅ Video updated on YouTube:', videoId);
+            console.log(`✅ Video updated on YouTube for user ${userId}:`, videoId);
             return { success: true, data: response.data };
-
         } catch (error) {
-            console.error('❌ Failed to update video:', error.message);
+            console.error(`❌ Failed to update video for user ${userId}:`, error.message);
             return { error: error.message };
         }
     }

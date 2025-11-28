@@ -3,7 +3,7 @@ import { FREE_QUOTA_PER_USER } from '../config.js';
 
 export class UserService {
     // Создание нового пользователя
-    async createUser(telegramUser, refSource = null) {
+    async createUser(telegramUser, refSource = null, utmSource = null) {
         const { id: userId, username, first_name: firstName, last_name: lastName } = telegramUser;
 
         const existingUser = await redis.get(`user:${userId}`);
@@ -24,6 +24,7 @@ export class UserService {
                 total_spent: 0,
                 remaining_balance: 0,
                 referralSource: refSource || null,
+                source: utmSource || null,
                 referredUsers: [],
                 expertReferrals: [],
                 createdAt: new Date().toISOString(),

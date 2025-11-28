@@ -7,6 +7,7 @@ import { ReferralService } from './services/Referral.service.js';
 import { errorLogger } from './services/ErrorLogger.service.js';
 import { ADMINS } from './config.js';
 import axios from 'axios';
+import redis from './redis.js';
 
 if (!process.env.BOT_TOKEN_ADMIN) {
     console.error('❌ BOT_TOKEN_ADMIN not found in .env file');
@@ -192,12 +193,60 @@ bot.action('stats', async (ctx) => {
         await ctx.editMessageText(message, {
             reply_markup: {
                 inline_keyboard: [
+                    [{ text: '📊 UTM источники', callback_data: 'utm_stats' }],
                     [{ text: '🔙 Назад', callback_data: 'main_menu' }]
                 ]
             }
         });
     } catch (err) {
         console.error('❌ Error in stats:', err);
+        await ctx.answerCbQuery('Ошибка получения статистики');
+    }
+});
+
+// UTM статистика
+bot.action('utm_stats', async (ctx) => {
+    try {
+        // Получаем всех пользователей
+        const allUserIds = await redis.smembers('all_users');
+        
+        let stats = {
+            total: allUserIds.length,
+            tiktok: 0,
+            instagram: 0,
+            youtube: 0,
+            noSource: 0
+        };
+        
+        // Подсчитываем статистику
+        for (const uid of allUserIds) {
+            const user = await userService.getUser(parseInt(uid));
+            if (user) {
+                if (user.source === 'tiktok') stats.tiktok++;
+                else if (user.source === 'instagram') stats.instagram++;
+                else if (user.source === 'youtube') stats.youtube++;
+                else stats.noSource++;
+            }
+        }
+        
+        const message = `📊 *Статистика по UTM источникам*\n\n` +
+            `👥 Всего пользователей: ${stats.total}\n\n` +
+            `🎵 TikTok: ${stats.tiktok} (${stats.total > 0 ? ((stats.tiktok/stats.total)*100).toFixed(1) : 0}%)\n` +
+            `📸 Instagram: ${stats.instagram} (${stats.total > 0 ? ((stats.instagram/stats.total)*100).toFixed(1) : 0}%)\n` +
+            `📺 YouTube: ${stats.youtube} (${stats.total > 0 ? ((stats.youtube/stats.total)*100).toFixed(1) : 0}%)\n` +
+            `❓ Без источника: ${stats.noSource} (${stats.total > 0 ? ((stats.noSource/stats.total)*100).toFixed(1) : 0}%)`;
+        
+        await ctx.editMessageText(message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🔙 Назад к статистике', callback_data: 'stats' }],
+                    [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+                ]
+            }
+        });
+    } catch (err) {
+        console.error('❌ Error in utm_stats:', err);
         await ctx.answerCbQuery('Ошибка получения статистики');
     }
 });
@@ -754,8 +803,11 @@ bot.action('broadcast', async (ctx) => {
     try {
         if (!ctx.session) ctx.session = {};
         
-        // Очищаем предыдущие данные
+        // Очищаем предыдущие данные и флаги
         ctx.session.broadcast = { step: 'content' };
+        delete ctx.session.waitingFor;
+        delete ctx.session.waitingForUserId;
+        delete ctx.session.quotaAction;
         
         await ctx.editMessageText(
             '📢 Рассылка сообщений\n\n' +
@@ -960,6 +1012,44 @@ bot.on('text', async (ctx) => {
             return;
         }
         
+        // Удаление эксперта (ПРИОРИТЕТ перед поиском пользователя!)
+        if (ctx.session.waitingFor === 'expert_remove_id') {
+            const userId = parseInt(ctx.message.text);
+            
+            if (isNaN(userId)) {
+                return await ctx.reply('❌ Неверный формат ID. Введите число.');
+            }
+            
+            const result = await referralService.removeExpert(userId);
+            
+            if (result.success) {
+                await ctx.reply(`✅ Пользователь ${userId} удален из экспертов!`);
+            } else {
+                await ctx.reply(`❌ Ошибка: ${result.error}`);
+            }
+            
+            delete ctx.session.waitingFor;
+            
+            // Показываем обновленный список
+            setTimeout(async () => {
+                const experts = await referralService.getAllExperts();
+                let message = '💼 Управление экспертами\n\n';
+                message += `Всего экспертов: ${experts.length}\n\n`;
+                
+                await ctx.reply(message, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '➕ Добавить эксперта', callback_data: 'expert_add' }],
+                            [{ text: '➖ Удалить эксперта', callback_data: 'expert_remove' }],
+                            [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+                        ]
+                    }
+                });
+            }, 500);
+            
+            return;
+        }
+        
         // Поиск пользователя
         if (ctx.session.waitingForUserId) {
             const userId = parseInt(ctx.message.text);
@@ -1108,44 +1198,6 @@ bot.on('text', async (ctx) => {
             
             if (result.success) {
                 await ctx.reply(`✅ Пользователь ${userId} добавлен в эксперты!`);
-            } else {
-                await ctx.reply(`❌ Ошибка: ${result.error}`);
-            }
-            
-            delete ctx.session.waitingFor;
-            
-            // Показываем обновленный список
-            setTimeout(async () => {
-                const experts = await referralService.getAllExperts();
-                let message = '💼 Управление экспертами\n\n';
-                message += `Всего экспертов: ${experts.length}\n\n`;
-                
-                await ctx.reply(message, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '➕ Добавить эксперта', callback_data: 'expert_add' }],
-                            [{ text: '➖ Удалить эксперта', callback_data: 'expert_remove' }],
-                            [{ text: '🔙 Назад', callback_data: 'main_menu' }]
-                        ]
-                    }
-                });
-            }, 500);
-            
-            return;
-        }
-        
-        // Удаление эксперта
-        if (ctx.session.waitingFor === 'expert_remove_id') {
-            const userId = parseInt(ctx.message.text);
-            
-            if (isNaN(userId)) {
-                return await ctx.reply('❌ Неверный формат ID. Введите число.');
-            }
-            
-            const result = await referralService.removeExpert(userId);
-            
-            if (result.success) {
-                await ctx.reply(`✅ Пользователь ${userId} удален из экспертов!`);
             } else {
                 await ctx.reply(`❌ Ошибка: ${result.error}`);
             }

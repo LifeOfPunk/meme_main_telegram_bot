@@ -92,41 +92,7 @@ async function safeAnswerCbQuery(ctx, text = undefined, options = {}) {
     }
 }
 
-// Список разрешенных пользователей
-const ALLOWED_USERS = [1916527652, 1323534384];
-const REDIRECT_BOT = '@meemee_official_bot';
-
-// Middleware для проверки доступа
-bot.use(async (ctx, next) => {
-    const userId = ctx.from?.id;
-    
-    console.log(`🔍 User ${userId} trying to access bot. Allowed: ${ALLOWED_USERS.includes(userId)}`);
-    
-    // Проверяем, есть ли пользователь в списке разрешенных
-    if (userId && !ALLOWED_USERS.includes(userId)) {
-        // Если пользователь не в списке - перенаправляем на основной бот
-        console.log(`⛔ User ${userId} blocked - not in allowed list`);
-        try {
-            await ctx.reply(
-                `⚠️ Этот бот находится в тестовом режиме.\n\n` +
-                `Пожалуйста, используйте основной бот: ${REDIRECT_BOT}`,
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🤖 Перейти к основному боту', url: `https://t.me/${REDIRECT_BOT.replace('@', '')}` }]
-                        ]
-                    }
-                }
-            );
-        } catch (err) {
-            console.error('❌ Error sending redirect message:', err);
-        }
-        return; // Не продолжаем обработку
-    }
-    
-    console.log(`✅ User ${userId} allowed - processing request`);
-    await next();
-});
+// Вайтлист убран - бот доступен всем пользователям
 
 // Middleware для обновления username
 bot.use(async (ctx, next) => {
@@ -171,11 +137,27 @@ bot.start(async (ctx) => {
     try {
         const userId = ctx.from.id;
         const startPayload = ctx.startPayload;
+        
+        // Определяем UTM источник из deep link
+        let utmSource = null;
+        const deepLink = ctx.message?.text || '';
+        if (deepLink.includes('/tiktok')) {
+            utmSource = 'tiktok';
+        } else if (deepLink.includes('/ig')) {
+            utmSource = 'instagram';
+        } else if (deepLink.includes('/yt')) {
+            utmSource = 'youtube';
+        }
 
         // Создание пользователя (перед обработкой реферала)
         const existingUser = await userService.getUser(userId);
-        await userService.createUser(ctx.from, startPayload);
+        await userService.createUser(ctx.from, startPayload, utmSource);
         const isNewUser = !existingUser;
+        
+        // Логируем источник для новых пользователей
+        if (isNewUser && utmSource) {
+            console.log(`📊 New user ${userId} from source: ${utmSource}`);
+        }
 
         let showWelcome = true;
 
@@ -279,13 +261,23 @@ bot.start(async (ctx) => {
     }
 });
 
-// Обработка команды /create (Создать мем)
+// Обработка команды /create (Создать видео)
 bot.command('create', async (ctx) => {
     try {
-        const keyboard = createCatalogKeyboard();
-        await ctx.reply(MESSAGES.MEMES_CATALOG, { 
-            reply_markup: keyboard
-        });
+        await ctx.reply(
+            MESSAGES.CREATE_VIDEO_MENU,
+            {
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
+                        [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
+                        [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
+                    ]
+                }
+            }
+        );
     } catch (err) {
         console.error('❌ Error in /create:', err);
         await ctx.reply('Произошла ошибка. Попробуйте позже.');
@@ -476,10 +468,12 @@ bot.action('create_video', async (ctx) => {
             await ctx.editMessageText(
                 MESSAGES.CREATE_VIDEO_MENU,
                 {
+                    parse_mode: 'Markdown',
+                    disable_web_page_preview: true,
                     reply_markup: {
                         inline_keyboard: [
+                            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
                             [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
-                            [{ text: '✍️ Создать свое видео', callback_data: 'custom_prompt' }],
                             [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
                         ]
                     }
@@ -490,10 +484,12 @@ bot.action('create_video', async (ctx) => {
             await ctx.reply(
                 MESSAGES.CREATE_VIDEO_MENU,
                 {
+                    parse_mode: 'Markdown',
+                    disable_web_page_preview: true,
                     reply_markup: {
                         inline_keyboard: [
+                            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
                             [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
-                            [{ text: '✍️ Создать свое видео', callback_data: 'custom_prompt' }],
                             [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
                         ]
                     }
@@ -555,14 +551,16 @@ bot.action('custom_prompt', async (ctx) => {
             return;
         }
         
+        // Сразу переходим к вводу промпта
+        ctx.session = ctx.session || {};
+        ctx.session.waitingFor = 'custom_prompt';
+        
         await ctx.editMessageText(
-            MESSAGES.CUSTOM_PROMPT_INFO,
+            MESSAGES.CUSTOM_PROMPT_INPUT,
             {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '✍️ Создать прямо сейчас', callback_data: 'start_custom_prompt' }],
-                        [{ text: '💡 Показать подробную инструкцию', callback_data: 'show_full_guide' }],
-                        [{ text: '⏪ Вернуться назад', callback_data: 'create_video' }]
+                        [{ text: '🔙 Назад', callback_data: 'create_video' }]
                     ]
                 }
             }
@@ -695,10 +693,10 @@ bot.action(/meme_(.+)/, async (ctx) => {
         ctx.session = ctx.session || {};
         ctx.session.selectedMeme = memeId;
         
-        // Отправляем видео и статистику в одном сообщении (медиа-группа)
+        // Отправляем медиа-группу и текст с кнопкой
         if (memeId === 'mama_taxi' || memeId === 'mama_call') {
             try {
-                // Отправляем медиа-группу (видео + фото с запросом имени)
+                // Отправляем медиа-группу (видео + фото с описанием)
                 await ctx.replyWithMediaGroup([
                     {
                         type: 'video',
@@ -707,16 +705,25 @@ bot.action(/meme_(.+)/, async (ctx) => {
                     {
                         type: 'photo',
                         media: { source: './media/statistic.jpeg' },
-                        caption: `*${meme.name}*\n\n${MESSAGES.ENTER_NAME}`,
+                        caption: `*${meme.name}*`,
                         parse_mode: 'Markdown'
                     }
                 ]);
+                
+                // Отправляем призыв с кнопкой
+                await ctx.reply(MESSAGES.ENTER_NAME, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                        ]
+                    }
+                });
             } catch (mediaErr) {
                 console.log('⚠️ Failed to send media files:', mediaErr.message);
             }
         } else if (memeId === '228') {
             try {
-                // Отправляем медиа-группу для мопса (видео + фото с запросом имени)
+                // Отправляем медиа-группу (видео + фото с описанием)
                 await ctx.replyWithMediaGroup([
                     {
                         type: 'video',
@@ -725,10 +732,19 @@ bot.action(/meme_(.+)/, async (ctx) => {
                     {
                         type: 'photo',
                         media: { source: './media/mops.jpeg' },
-                        caption: `*${meme.name}*\n\n${MESSAGES.ENTER_NAME}`,
+                        caption: `*${meme.name}*`,
                         parse_mode: 'Markdown'
                     }
                 ]);
+                
+                // Отправляем призыв с кнопкой
+                await ctx.reply(MESSAGES.ENTER_NAME, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                        ]
+                    }
+                });
             } catch (mediaErr) {
                 console.log('⚠️ Failed to send media files:', mediaErr.message);
             }
@@ -834,22 +850,14 @@ bot.on('text', async (ctx) => {
             }
             
             // Отправляем сообщение о генерации (без названия мема для custom)
-            try {
-                await ctx.replyWithPhoto(
-                    { source: './media/veo3.png' },
-                    {
-                        caption: MESSAGES.GENERATION_STARTED(null),
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                            ]
-                        }
-                    }
-                );
-            } catch (photoErr) {
-                console.log('⚠️ Failed to send generation photo, sending text instead');
-                await ctx.reply(MESSAGES.GENERATION_STARTED(null));
-            }
+            await ctx.reply(MESSAGES.GENERATION_STARTED(null), {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '✨ Создать еще', callback_data: 'create_video' }],
+                        [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
+                    ]
+                }
+            });
             
             // Сохраняем промпт для отправки админам ПОСЛЕ генерации
             ctx.session.customPromptData = {
@@ -1010,6 +1018,8 @@ bot.on('text', async (ctx) => {
 // Обработка выбора пола
 bot.action(/gender_(male|female)/, async (ctx) => {
     try {
+        await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
+        
         ctx.session = ctx.session || {};
         const gender = ctx.match[1];
         ctx.session.generationGender = gender;
@@ -1060,23 +1070,15 @@ bot.action('confirm_gen', async (ctx) => {
         const meme = getMemeById(memeId);
         const memeName = meme ? meme.name : null;
         
-        // Отправляем изображение с процессом генерации
-        try {
-            await ctx.replyWithPhoto(
-                { source: './media/veo3.png' },
-                {
-                    caption: MESSAGES.GENERATION_STARTED(memeName),
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    }
-                }
-            );
-        } catch (photoErr) {
-            console.log('⚠️ Failed to send generation photo, sending text instead');
-            await ctx.editMessageText(MESSAGES.GENERATION_STARTED(memeName));
-        }
+        // Отправляем сообщение о генерации
+        await ctx.reply(MESSAGES.GENERATION_STARTED(memeName), {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '✨ Создать еще', callback_data: 'create_video' }],
+                    [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
+                ]
+            }
+        });
         
         // Ожидаем завершения генерации
         await waitForGeneration(ctx, generation.generationId);
@@ -1090,6 +1092,97 @@ bot.action('confirm_gen', async (ctx) => {
     } catch (err) {
         console.error('❌ Error confirming generation:', err);
         await ctx.answerCbQuery('Произошла ошибка');
+    }
+});
+
+// Обработка загрузки видео на YouTube
+bot.action(/upload_youtube_(.+)/, async (ctx) => {
+    try {
+        await safeAnswerCbQuery(ctx);
+        
+        const userId = ctx.from.id;
+        const generationId = ctx.match[1];
+        const generation = await generationService.getGeneration(generationId);
+        
+        if (!generation || !generation.videoUrl) {
+            return await ctx.reply('❌ Видео не найдено');
+        }
+        
+        // Проверяем, не загружено ли уже
+        if (generation.youtubeUrl) {
+            return await ctx.reply(
+                `✅ Видео уже загружено на YouTube!\n\n🔗 ${generation.youtubeUrl}`,
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+                        ]
+                    }
+                }
+            );
+        }
+        
+        // Проверяем, авторизован ли пользователь
+        const { YouTubeAuthService } = await import('./services/YouTubeAuth.service.js');
+        const authService = new YouTubeAuthService();
+        const isAuthorized = await authService.isUserAuthorized(userId);
+        
+        if (!isAuthorized) {
+            const authUrl = authService.getAuthUrl(userId);
+            return await ctx.reply(
+                '📺 Для загрузки видео на YouTube нужно подключить ваш канал.\n\n' +
+                'Нажмите кнопку ниже для авторизации:',
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔗 Подключить YouTube', url: authUrl }],
+                            [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+                        ]
+                    }
+                }
+            );
+        }
+        
+        await ctx.reply('⏳ Загружаем видео на YouTube, это может занять несколько минут...');
+        
+        // Загружаем на YouTube
+        const youtubeResult = await generationService.uploadToYouTube(generation, generation.videoUrl);
+        
+        if (youtubeResult && youtubeResult.success) {
+            await generationService.updateGeneration(generationId, {
+                youtubeUrl: youtubeResult.videoUrl,
+                youtubeVideoId: youtubeResult.videoId
+            });
+            
+            await ctx.reply(
+                `✅ Видео успешно загружено на ваш YouTube канал!\n\n🔗 ${youtubeResult.videoUrl}`,
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🎬 Создать еще', callback_data: 'create_video' }],
+                            [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+                        ]
+                    }
+                }
+            );
+        } else {
+            await ctx.reply(
+                '❌ Не удалось загрузить видео на YouTube.\n\n' +
+                (youtubeResult?.error || 'Произошла неизвестная ошибка'),
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔄 Попробовать снова', callback_data: `upload_youtube_${generationId}` }],
+                            [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+                        ]
+                    }
+                }
+            );
+        }
+        
+    } catch (err) {
+        console.error('❌ Error uploading to YouTube:', err);
+        await ctx.reply('❌ Произошла ошибка при загрузке на YouTube');
     }
 });
 
@@ -1170,20 +1263,8 @@ async function waitForGeneration(ctx, generationId, quickCheckAttempts = 10) {
         }
     }
     
-    // Если за 30 секунд видео не готово - сообщаем что оно придет автоматически
-    await ctx.reply(
-        '⏳ Ваше видео генерируется!\n\n' +
-        '🎬 Генерация займет 1-3 минуты. Мы автоматически отправим вам видео, когда оно будет готово.\n\n' +
-        '✨ Вы можете продолжать пользоваться ботом!',
-        {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '🎬 Создать ещё', callback_data: 'create_video' }],
-                    [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
-                ]
-            }
-        }
-    );
+    // Если за 30 секунд видео не готово - первое сообщение с фоткой уже информирует пользователя
+    // Дополнительное сообщение не требуется
 }
 
 // Inline режим для пересылки видео
