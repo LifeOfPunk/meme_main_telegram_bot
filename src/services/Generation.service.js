@@ -603,7 +603,7 @@ export class GenerationService {
                                     [{ text: '👥 Поделиться с другом', switch_inline_query: data.generationId }],
                                     [{ text: '📺 Опубликовать на YouTube', callback_data: `upload_youtube_${data.generationId}` }],
                                     [{ text: '🎬 Сгенерировать еще', callback_data: 'create_video' }],
-                                    [{ text: '�  Главное меню', callback_data: 'main_menu' }]
+                                    [{ text: '🏠  Главное меню', callback_data: 'main_menu' }]
                                 ]
                             }
                         }
