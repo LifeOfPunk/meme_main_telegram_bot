@@ -323,7 +323,7 @@ export const ABOUT_KEYBOARD = {
     inline_keyboard: [
         [{ text: '📺 YouTube Канал', url: 'https://youtube.com/@aiviral-media' }],
         [{ text: '❓ FAQ', url: 'https://telegra.ph/MeeMee-FAQ-chasto-zadavaemye-voprosy-11-04' }],
-        [{ text: '🙊 Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'aiviral_manager'}` }],
+        [{ text: '🙊 Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'i_prokhorovich'}` }],
         [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
     ]
 };
