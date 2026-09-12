@@ -32,7 +32,7 @@
 - ✅ **TASK-11**: Вирусный реферальный шеринг видео и инлайн-режим — [`TASK-11-viral-referral-video-share.md`](TASK-11-viral-referral-video-share.md) `[Done]`
 - 🔄 **TASK-12**: Настройка Google OAuth и автовыгрузки на YouTube — [`TASK-12-youtube-oauth-and-auto-upload.md`](TASK-12-youtube-oauth-and-auto-upload.md) `[Ready]`
 - ✅ **TASK-17**: Синхронизация страниц сайта (Гайд 9:16, Оферта, Политика) в репозиторий бота — [`TASK-17-site-legal-and-prompts-guide-sync.md`](TASK-17-site-legal-and-prompts-guide-sync.md) `[Done]`
-- 🚀 **TASK-19**: Визуальная Админка (CMS) в прототипе с прямой кнопкой «Push to GitHub» — [`TASK-19-visual-prototype-admin-cms-github-push.md`](TASK-19-visual-prototype-admin-cms-github-push.md) `[P1 / Plan]`
+- ✅ **TASK-19**: Визуальная Админка (CMS) в прототипе с прямой кнопкой «Push to GitHub» — [`TASK-19-visual-prototype-admin-cms-github-push.md`](TASK-19-visual-prototype-admin-cms-github-push.md) `[Done / Deployed]`
 
 ---
 
