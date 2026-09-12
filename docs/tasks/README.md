@@ -13,3 +13,4 @@
 | **TASK-11** | Вирусный реферальный шеринг сгенерированного видео | P1 | Ready | [`TASK-11-viral-referral-video-share.md`](TASK-11-viral-referral-video-share.md) |
 | **TASK-12** | Настройка Google OAuth и автовыгрузки на YouTube | P1 | Ready | [`TASK-12-youtube-oauth-and-auto-upload.md`](TASK-12-youtube-oauth-and-auto-upload.md) |
 | **TASK-14** | Цветные инлайн-кнопки (style: success/danger/primary) | P2 | Ready | [`TASK-14-colored-inline-buttons-design-system.md`](TASK-14-colored-inline-buttons-design-system.md) |
+| **TASK-15** | Кошелек, депозиты от $0.50, автоматический вывод и апгрейд видеомодели | P0 | Ready | [`TASK-15-wallet-deposit-and-payout-engine.md`](TASK-15-wallet-deposit-and-payout-engine.md) |
