@@ -9,8 +9,9 @@ export class OrderService {
         await redis.lpush('all_orders', orderId);
         await redis.lpush(`user_orders:${userId}`, orderId);
 
-        if (orderData.isFiat && orderData.email) {
-            await redis.set(`email_to_order:${orderData.email}`, orderId);
+        if (orderData.email || orderData.input?.email) {
+            const email = orderData.email || orderData.input?.email;
+            await redis.set(`email_to_order:${email}`, orderId);
         }
 
         if (orderData.parentId) {
@@ -20,6 +21,12 @@ export class OrderService {
         const outputUid = orderData.output?.id || orderData.output?.uid;
         if (outputUid) {
             await redis.set(`parent_to_order:${outputUid}`, orderId);
+        }
+
+        const outputAddress = orderData.output?.address || orderData.output?.Address || orderData.output?.wallet;
+        if (outputAddress) {
+            await redis.set(`address_to_order:${outputAddress.toLowerCase()}`, orderId);
+            await redis.set(`parent_to_order:${outputAddress}`, orderId);
         }
 
         console.log(`📝 Order ${orderId} created for user ${userId}`);
@@ -37,6 +44,20 @@ export class OrderService {
     async getOrderByParentId(parentId) {
         if (!parentId) return null;
         const orderId = await redis.get(`parent_to_order:${parentId}`);
+        return orderId ? await this.getOrderById(orderId) : null;
+    }
+
+    // Получение заказа по адресу кошелька
+    async getOrderByAddress(address) {
+        if (!address) return null;
+        const orderId = await redis.get(`address_to_order:${address.toLowerCase()}`);
+        return orderId ? await this.getOrderById(orderId) : null;
+    }
+
+    // Получение заказа по email
+    async getOrderByEmail(email) {
+        if (!email) return null;
+        const orderId = await redis.get(`email_to_order:${email}`);
         return orderId ? await this.getOrderById(orderId) : null;
     }
 

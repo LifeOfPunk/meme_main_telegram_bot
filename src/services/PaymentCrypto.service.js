@@ -252,7 +252,7 @@ export class PaymentCryptoService {
         }
     }
 
-    // Проверка статуса платежа через API 0xProcessing
+    // Проверка статуса платежа через блокчейн (on-chain) и fallback на API 0xProcessing
     async checkPaymentStatus(orderId) {
         try {
             console.log(`🔍 [PaymentCrypto] Checking status for order: ${orderId}`);
@@ -267,48 +267,117 @@ export class PaymentCryptoService {
             
             if (order.isPaid) {
                 console.log(`✅ Order already marked as paid: ${orderId}`);
-                return { status: 'paid' };
+                return { status: 'paid', amount: Number(order.amount || 2.0) };
             }
 
-            // Проверяем через API 0xProcessing
+            const address = order.output?.address || order.output?.Address || order.output?.wallet;
+            const currency = (order.currency || order.input?.payCurrency || order.input?.currency || '').toUpperCase();
+            console.log(`📡 Checking order ${orderId}: address=${address}, currency=${currency}`);
+
+            // 1. Проверка on-chain в BSC (BEP-20 / BNB)
+            if (address && address.startsWith('0x')) {
+                // А. Проверка USDT (BEP-20)
+                try {
+                    const cleanAddress = address.toLowerCase().replace('0x', '').padStart(64, '0');
+                    const rpcResponse = await axios.post('https://bsc-dataseed1.binance.org/', {
+                        jsonrpc: '2.0',
+                        method: 'eth_call',
+                        params: [{
+                            to: '0x55d398326f99059ff775485246999027b3197955', // USDT BSC Contract
+                            data: `0x70a08231${cleanAddress}`
+                        }, 'latest'],
+                        id: 1
+                    }, { timeout: 7000 });
+
+                    if (rpcResponse.data?.result && rpcResponse.data.result !== '0x') {
+                        const hexVal = rpcResponse.data.result;
+                        const rawBalance = new BigNumber(hexVal, 16);
+                        const usdtBalance = rawBalance.dividedBy(new BigNumber(10).pow(18)).toNumber();
+                        console.log(`🔗 BSC on-chain USDT balance for ${address}: ${usdtBalance} USDT`);
+
+                        if (usdtBalance >= 0.5) {
+                            console.log(`✅ On-chain USDT payment confirmed! Balance: ${usdtBalance} USDT`);
+                            return { status: 'paid', amount: usdtBalance };
+                        }
+                    }
+                } catch (bscErr) {
+                    console.warn(`⚠️ BSC USDT check error:`, bscErr.message);
+                }
+
+                // Б. Проверка нативного BNB
+                if (currency.includes('BNB')) {
+                    try {
+                        const bnbResponse = await axios.post('https://bsc-dataseed1.binance.org/', {
+                            jsonrpc: '2.0',
+                            method: 'eth_getBalance',
+                            params: [address, 'latest'],
+                            id: 2
+                        }, { timeout: 7000 });
+
+                        if (bnbResponse.data?.result) {
+                            const rawBnb = new BigNumber(bnbResponse.data.result, 16);
+                            const bnbBalance = rawBnb.dividedBy(new BigNumber(10).pow(18)).toNumber();
+                            console.log(`🔗 BSC on-chain BNB balance for ${address}: ${bnbBalance} BNB`);
+
+                            if (bnbBalance >= 0.003) {
+                                console.log(`✅ On-chain BNB payment confirmed! Balance: ${bnbBalance} BNB`);
+                                return { status: 'paid', amount: Number(order.amount || 4.0) };
+                            }
+                        }
+                    } catch (bnbErr) {
+                        console.warn(`⚠️ BSC BNB check error:`, bnbErr.message);
+                    }
+                }
+            }
+
+            // 2. Проверка on-chain в Tron (TRC-20 USDT)
+            if (address && address.startsWith('T')) {
+                try {
+                    const tronResp = await axios.get(`https://apilist.tronscanapi.com/api/account?address=${address}`, { timeout: 7000 });
+                    if (tronResp.data?.trc20token_balances) {
+                        const usdtToken = tronResp.data.trc20token_balances.find(t => t.tokenId === 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t');
+                        if (usdtToken) {
+                            const tronBalance = Number(usdtToken.balance) / 1e6;
+                            console.log(`🔗 TRON on-chain USDT balance for ${address}: ${tronBalance} USDT`);
+                            if (tronBalance >= 0.5) {
+                                console.log(`✅ On-chain TRC20 USDT payment confirmed! Balance: ${tronBalance} USDT`);
+                                return { status: 'paid', amount: tronBalance };
+                            }
+                        }
+                    }
+                } catch (tronErr) {
+                    console.warn(`⚠️ Tron on-chain check error:`, tronErr.message);
+                }
+            }
+
+            // 3. Fallback: Проверка через API 0xProcessing
             try {
-                // Используем uid от 0xProcessing, а не наш orderId
                 const paymentUid = order.output?.uid || order.output?.id || orderId;
-                console.log(`📡 Calling 0xProcessing API to check status...`);
-                console.log(`   Using payment UID: ${paymentUid}`);
-                
                 const response = await axios.get(
                     `${this.baseUrl}/Api/PaymentStatus/${paymentUid}`,
                     {
                         headers: {
                             'Authorization': `Bearer ${this.api}`
                         },
-                        timeout: 10000
+                        timeout: 5000
                     }
                 );
 
-                console.log(`📥 API Response:`, response.data);
-
-                // Проверяем статус из ответа
                 const status = response.data?.status || response.data?.Status;
-                
                 if (status && (
                     status.toLowerCase() === 'success' || 
                     status.toLowerCase() === 'paid' || 
                     status.toLowerCase() === 'completed'
                 )) {
                     console.log(`✅ Payment confirmed by API: ${orderId}`);
-                    return { status: 'paid' };
+                    return { status: 'paid', amount: Number(response.data?.AmountUSD || order.amount || 2.0) };
                 }
-
-                console.log(`⏳ Payment still pending: ${orderId}`);
-                return { status: 'pending' };
-
             } catch (apiErr) {
-                console.error(`⚠️ API check failed:`, apiErr.message);
-                // Если API недоступен, возвращаем pending
-                return { status: 'pending' };
+                // API 404 is normal if endpoint is deprecated; on-chain check was already performed
             }
+
+            console.log(`⏳ Payment still pending: ${orderId}`);
+            return { status: 'pending' };
 
         } catch (err) {
             console.error('❌ Error checking payment status:', err);

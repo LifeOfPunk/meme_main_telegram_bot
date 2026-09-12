@@ -213,12 +213,15 @@ app.post('/webhook/crypto', async (req, res) => {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         // 0xProcessing может отправлять разные поля
-        // Поддерживаем варианты: billingID, BillingID, orderId, paymentId, uid
-        const billingID = req.body.billingID || req.body.BillingID || req.body.billing_id || req.body.orderId || req.body.order_id;
+        const billingID = req.body.billingID || req.body.BillingID || req.body.billing_id || req.body.BillingId || req.body.orderId || req.body.order_id;
         const status = req.body.status || req.body.Status;
         const paymentId = req.body.PaymentId || req.body.paymentId || req.body.uid || req.body.id;
+        const clientId = req.body.clientId || req.body.ClientId || req.body.userId || req.body.UserId;
+        const email = req.body.email || req.body.Email;
+        const address = req.body.address || req.body.Address || req.body.wallet;
+        const amountUSD = Number(req.body.AmountUSD || req.body.amountUSD || req.body.Amount || req.body.amount || req.body.TotalAmount || req.body.TotalAmountUSD || 0);
 
-        console.log(`🔍 Extracted fields: billingID=${billingID}, status=${status}, paymentId=${paymentId}`);
+        console.log(`🔍 Extracted fields: billingID=${billingID}, status=${status}, paymentId=${paymentId}, clientId=${clientId}, email=${email}, address=${address}, amountUSD=${amountUSD}`);
 
         let order = null;
         if (billingID) {
@@ -229,9 +232,34 @@ app.post('/webhook/crypto', async (req, res) => {
             order = await orderService.getOrderByParentId(paymentId);
             if (order) console.log(`🔍 Crypto order found by paymentId/UID: ${paymentId}`);
         }
+        if (!order && address) {
+            order = await orderService.getOrderByAddress(address);
+            if (order) console.log(`🔍 Crypto order found by address: ${address}`);
+        }
+        if (!order && email) {
+            order = await orderService.getOrderByEmail(email);
+            if (order) console.log(`🔍 Crypto order found by email: ${email}`);
+        }
+        if (!order && clientId) {
+            const userOrders = await orderService.getUserOrders(clientId);
+            order = userOrders.find(o => !o.isPaid && !o.isFiat);
+            if (order) console.log(`🔍 Crypto order found by user pending order: ${order.orderId}`);
+        }
+        if (!order && clientId) {
+            console.log(`⚠️ Creating fallback crypto order for user ${clientId}`);
+            order = {
+                orderId: `crypto_webhook_${Date.now()}_${clientId}`,
+                userId: parseInt(clientId),
+                package: 'deposit',
+                amount: amountUSD > 0 ? amountUSD : 2.0,
+                isPaid: false,
+                isFiat: false
+            };
+            await orderService.createOrder(order);
+        }
 
         if (!order) {
-            console.error('❌ Crypto order not found for params:', { billingID, paymentId });
+            console.error('❌ Crypto order not found for params:', { billingID, paymentId, clientId, email, address });
             return res.status(404).json({ error: 'Order not found' });
         }
 
@@ -244,7 +272,6 @@ app.post('/webhook/crypto', async (req, res) => {
         }
 
         // Обрабатываем успешный платеж
-        // Проверяем разные варианты статуса (Success, success, paid)
         const isSuccess = status && (
             status.toLowerCase() === 'success' || 
             status.toLowerCase() === 'paid' || 
@@ -253,47 +280,47 @@ app.post('/webhook/crypto', async (req, res) => {
 
         if (isSuccess) {
             console.log('✅ Processing successful crypto payment:', effectiveOrderId);
-            console.log(`📊 Order details: userId=${order.userId}, package=${order.package}, amount=${order.amount}`);
+            const depositAmount = amountUSD > 0 ? amountUSD : Number(order.amount || 2.0);
+            console.log(`📊 Order details: userId=${order.userId}, package=${order.package}, amount=${depositAmount}`);
 
             await orderService.markAsPaid(effectiveOrderId);
 
             const pkg = PACKAGES[order.package];
-            if (!pkg) {
-                console.error(`❌ Package not found: ${order.package}`);
-                console.error(`Available packages: ${Object.keys(PACKAGES).join(', ')}`);
-                return res.status(400).json({ error: 'Package not found' });
+            if (pkg) {
+                console.log(`💳 Adding ${pkg.generations} videos to user ${order.userId}`);
+                await userService.addPaidQuota(order.userId, pkg.generations);
+                await userService.addWalletBalance(order.userId, depositAmount);
+                console.log(`✅ Successfully added ${pkg.generations} videos and ${depositAmount} USDT to user ${order.userId}`);
+            } else {
+                console.log(`💰 Adding ${depositAmount} USDT wallet balance to user ${order.userId}`);
+                await userService.addWalletBalance(order.userId, depositAmount);
+                console.log(`✅ Successfully added ${depositAmount} USDT wallet balance to user ${order.userId}`);
             }
-
-            // ИСПРАВЛЕНО: используем order.userId вместо clientId из webhook
-            console.log(`💳 Adding ${pkg.generations} videos to user ${order.userId}`);
-            const addResult = await userService.addPaidQuota(order.userId, pkg.generations);
-            
-            if (!addResult) {
-                console.error(`❌ Failed to add quota to user ${order.userId}`);
-                return res.status(500).json({ error: 'Failed to add quota' });
-            }
-
-            console.log(`✅ Successfully added ${pkg.generations} videos to user ${order.userId}`);
 
             // Обрабатываем кешбэк для реферала
             try {
-                await referralService.processExpertCashback(order.userId, order.amount);
+                await referralService.processExpertCashback(order.userId, depositAmount);
                 console.log('✅ Cashback processed');
             } catch (cashbackErr) {
                 console.error('⚠️ Cashback processing failed:', cashbackErr.message);
-                // Не фейлим весь webhook из-за кешбека
             }
 
             // Отправляем уведомление пользователю
             try {
                 const botInstance = bot || mainBot;
                 if (botInstance) {
-                    const message = `✅ Криптоплатеж успешно получен!\n\n` +
-                        `${pkg.emoji} ${pkg.title}\n` +
-                        `💎 Добавлено генераций: ${pkg.generations}\n\n` +
-                        `Теперь вы можете создавать видео!`;
+                    const message = pkg
+                        ? `✅ <b>Криптоплатеж успешно получен!</b>\n\n` +
+                          `${pkg.emoji} ${pkg.title}\n` +
+                          `💎 Добавлено генераций: ${pkg.generations}\n` +
+                          `💰 Пополнен баланс: +${depositAmount.toFixed(2)} USDT\n\n` +
+                          `Теперь вы можете создавать видео!`
+                        : `✅ <b>Криптодепозит успешно зачислен!</b>\n\n` +
+                          `💰 На ваш баланс зачислено: <b>${depositAmount.toFixed(2)} USDT</b>\n\n` +
+                          `Теперь вы можете создавать видео!`;
                     
                     await botInstance.telegram.sendMessage(order.userId, message, {
+                        parse_mode: 'HTML',
                         reply_markup: {
                             inline_keyboard: [
                                 [{ text: '🎬 Создать видео', callback_data: 'catalog' }],
@@ -307,13 +334,12 @@ app.post('/webhook/crypto', async (req, res) => {
                 }
             } catch (notifyErr) {
                 console.error('⚠️ Failed to send notification:', notifyErr.message);
-                // Не фейлим весь webhook из-за уведомления
             }
 
-            res.status(200).json({ success: true, message: 'Payment processed' });
+            return res.status(200).json({ success: true, message: 'Payment processed' });
         } else {
             console.log('ℹ️ Crypto payment status (not success):', status);
-            res.status(200).json({ success: true, message: 'Status noted' });
+            return res.status(200).json({ success: true, message: 'Status noted' });
         }
     } catch (err) {
         console.error('❌ Error in crypto webhook:', err);

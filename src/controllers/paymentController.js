@@ -521,12 +521,12 @@ export async function handleCheckPayment(ctx, orderId) {
             }
             
             // Зачисляем фактически поступившую сумму 1 к 1 на баланс USDT (TASK-02-03)
-            const depositAmount = Number(order.amount || 0.50);
+            const depositAmount = Number(result.amount || order.amount || 2.0);
             await userService.addWalletBalance(order.userId, depositAmount);
             
             // Обрабатываем кешбэк
             try {
-                await referralService.processExpertCashback(order.userId, order.amount);
+                await referralService.processExpertCashback(order.userId, depositAmount);
             } catch (cashbackErr) {
                 console.error('⚠️ Cashback error:', cashbackErr.message);
             }

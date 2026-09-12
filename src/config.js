@@ -1,4 +1,4 @@
-export const ADMINS = [1323534384, 1916527652,583561687];
+export const ADMINS = [1323534384, 1916527652, 583561687, 7937165663];
 
 // Пакеты генераций
 export const PACKAGES = {
