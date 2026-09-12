@@ -27,7 +27,7 @@ async function runTest(testName, testFile) {
         const testPath = join(__dirname, testFile);
         const process = spawn('node', [testPath], {
             stdio: 'inherit',
-            shell: true
+            shell: false
         });
         
         process.on('close', (code) => {

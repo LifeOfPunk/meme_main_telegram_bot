@@ -1,0 +1,78 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: viralapp-staging-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - viralapp-staging-redis-data:/data
+    networks:
+      - viralapp-staging-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  bot:
+    build: .
+    container_name: viralapp-staging-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - NODE_ENV=staging
+      - BOT_NAME=viralapp_test_bot
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - viralapp-staging-internal
+    volumes:
+      - ./media:/app/media
+
+  admin:
+    build: .
+    container_name: viralapp-staging-admin
+    restart: unless-stopped
+    command: ["node", "src/bot_start_admin.js"]
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - NODE_ENV=staging
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - viralapp-staging-internal
+
+  backend:
+    build: .
+    container_name: viralapp-staging-backend
+    restart: unless-stopped
+    command: ["node", "src/backend/index.js"]
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - NODE_ENV=staging
+      - WEBHOOK_PORT=3005
+    ports:
+      - "127.0.0.1:3006:3005"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - viralapp-staging-internal
+      - n8n-internal
+
+networks:
+  viralapp-staging-internal:
+  n8n-internal:
+    external: true
+    name: n8n_internal
+
+volumes:
+  viralapp-staging-redis-data:
