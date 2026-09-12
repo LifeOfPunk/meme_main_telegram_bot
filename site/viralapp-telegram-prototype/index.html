@@ -1483,9 +1483,7 @@
                 text: "Сумма к оплате:\n\n🎬 10 видео $6.2 (500₽)\n\nПроводя оплату вы соглашаетесь с <a href=\"https://aiviral.agency/dogovor-oferta/\" target=\"_blank\">договором-офертой</a> и <a href=\"https://aiviral.agency/politika-konfidencialnosti/\" target=\"_blank\">политикой конфиденциальности</a>",
                 buttons: [
                     { id: "ci1", text: "💳 Оплатить картой", action: "window.open('https://app.lava.top', '_blank')", class: "style-success", visible: true },
-                    { id: "ci2", text: "📝 Договор-оферта", action: "window.open('https://aiviral.agency/dogovor-oferta/', '_blank')", class: "", visible: true },
-                    { id: "ci3", text: "📝 Политика конфиденциальности", action: "window.open('https://aiviral.agency/politika-konfidencialnosti/', '_blank')", class: "", visible: true },
-                    { id: "ci4", text: "❓ Поддержка", action: "window.open('https://t.me/aiviral_main', '_blank')", class: "", visible: true },
+                    { id: "ci4", text: "❓ Обратная связь", action: "window.open('https://t.me/aiviral_main', '_blank')", class: "", visible: true },
                     { id: "ci5", text: "🔙 Назад к пакетам", action: "goTo('card_packages')", class: "", visible: true }
                 ],
                 navId: "btn-card-inv"
@@ -1518,7 +1516,8 @@
                 text: "👤 Личный кабинет\n\n🆔 ID: 7937165663\n📝 Имя: Rick\n\n📊 Баланс генераций: 11 видео\n🎁 Бесплатные генерации: 1\n💎 Платные генерации: 10\n💵 Баланс кошелька: 8.40 USDT (~756₽)\n\n💰 Доступно к выводу: 15.00 USDT",
                 buttons: [
                     { id: "pc1", text: "💸 Вывести средства", action: "goTo('withdraw_screen')", class: "style-success", visible: true },
-                    { id: "pc2", text: "🤝 Реферальная программа", action: "goTo('referral_screen')", class: "style-warning", visible: true },
+                    { id: "pc2", text: "❓ Инструкция", action: "window.open('https://aiviral.agency/kak-pisat-promty/', '_blank')", class: "", visible: true },
+                    { id: "pc_tx", text: "💳 История транзакций", action: "alert('История транзакций: 0 заказов')", class: "", visible: true },
                     { id: "pc3", text: "📜 История генераций", action: "alert('История пуста')", class: "", visible: true },
                     { id: "pc4", text: "💬 Поддержка", action: "window.open('https://t.me/aiviral_main', '_blank')", class: "", visible: true },
                     { id: "pc5", text: "ℹ️ О проекте", action: "goTo('about_screen')", class: "", visible: true },

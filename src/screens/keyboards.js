@@ -142,16 +142,16 @@ export async function createMainMenuKeyboard(userIdOrUser) {
         callback_data: 'profile'
     }]);
 
-    // Кнопка 5: "❓ Инструкция"
+    // Кнопка 5: "🤝 Реферальная программа"
     buttons.push([{
-        text: '❓ Инструкция',
-        url: 'https://aiviral.agency/kak-pisat-promty/'
+        text: '🤝 Реферальная программа',
+        callback_data: 'referral'
     }]);
     
     return { inline_keyboard: buttons };
 }
 
-// Генерация клавиатуры личного кабинета (TASK-07, TASK-15)
+// Генерация клавиатуры личного кабинета (TASK-07, TASK-15, TASK-20)
 export function createProfileKeyboard(user, referralStats = null) {
     const totalCashback = Number(user?.totalCashback ?? referralStats?.totalCashback ?? user?.affiliate_earnings ?? 0);
     const buttons = [];
@@ -164,10 +164,16 @@ export function createProfileKeyboard(user, referralStats = null) {
         }]);
     }
 
-    // 2. [🤝 Реферальная программа]
+    // 2. [❓ Инструкция] -> https://aiviral.agency/kak-pisat-promty/
     buttons.push([{
-        text: '🤝 Реферальная программа',
-        callback_data: 'referral'
+        text: '❓ Инструкция',
+        url: 'https://aiviral.agency/kak-pisat-promty/'
+    }]);
+
+    // 3. [💳 История транзакций]
+    buttons.push([{
+        text: '💳 История транзакций',
+        callback_data: 'profile_transactions'
     }]);
 
     // 4. [📜 История генераций]

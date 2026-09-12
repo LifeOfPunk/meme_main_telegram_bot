@@ -358,7 +358,7 @@ export function getMainMenuText(user) {
     const balanceUsdt = Number(user?.wallet_balance_usdt ?? user?.wallet_balance ?? 0).toFixed(2);
     const balanceRub = (balanceUsdt * 90).toFixed(0);
 
-    return `🎬 *Добро пожаловать в ViralApp!*\n\n🔥 _Всего генераций в системе: 24,850+_\n\nСоздай вирусный персонализированный мем или видео в лучшем качестве.\n\n📊 *Ваш баланс:* ${total} видео\n🎁 Бесплатные генерации: ${freeQuota}\n💎 Платные генерации: ${paidQuota}\n💵 Баланс кошелька: ${balanceUsdt} USDT (~${balanceRub}₽)\n\nВыбери действие:`;
+    return `🎬 *Добро пожаловать в ViralApp!*\n\nСоздай вирусный персонализированный мем или видео в лучшем качестве.\n\n📊 *Ваш баланс:* ${total} видео\n🎁 Бесплатные генерации: ${freeQuota}\n💎 Платные генерации: ${paidQuota}\n💵 Баланс кошелька: ${balanceUsdt} USDT (~${balanceRub}₽)\n\nВыбери действие:`;
 }
 
 export const WATERMARK_IMAGE_PATH = process.env.WATERMARK_IMAGE_PATH || '/home/aiviral/memememe/2568-11-12_16.23.25-removebg-preview.png';

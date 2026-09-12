@@ -15,8 +15,8 @@ assert.strictEqual(rowsNoFree[1][0].text, '💳 Пополнить баланс'
 assert.strictEqual(rowsNoFree[1][0].callback_data, 'buy');
 assert.strictEqual(rowsNoFree[2][0].text, '👤 Личный кабинет');
 assert.strictEqual(rowsNoFree[2][0].callback_data, 'profile');
-assert.strictEqual(rowsNoFree[3][0].text, '❓ Инструкция');
-assert.strictEqual(rowsNoFree[3][0].url, 'https://aiviral.agency/kak-pisat-promty/');
+assert.strictEqual(rowsNoFree[3][0].text, '🤝 Реферальная программа');
+assert.strictEqual(rowsNoFree[3][0].callback_data, 'referral');
 console.log('   ✅ 4-row keyboard without free quota verified');
 
 const kbWithFree = await createMainMenuKeyboard({ free_quota: 3 });
@@ -25,6 +25,8 @@ assert.strictEqual(rowsWithFree[0][0].text, '🎬 Создать видео');
 assert.strictEqual(rowsWithFree[1][0].text, '🎁 Бесплатная генерация');
 assert.strictEqual(rowsWithFree[1][0].callback_data, 'create_video_free');
 assert.strictEqual(rowsWithFree[2][0].text, '💳 Пополнить баланс');
+assert.strictEqual(rowsWithFree[3][0].text, '👤 Личный кабинет');
+assert.strictEqual(rowsWithFree[4][0].text, '🤝 Реферальная программа');
 console.log('   ✅ 5-row keyboard with free quota verified');
 
 // 2. Profile Keyboard tests
@@ -32,6 +34,8 @@ console.log('\n2️⃣ Profile Keyboard Structure');
 const profileKbZero = createProfileKeyboard({ totalCashback: 0 });
 const profileRowsZero = profileKbZero.inline_keyboard;
 assert(!profileRowsZero.some(row => row.some(btn => btn.text.includes('Вывести'))), 'Should not show withdraw button if cashback is 0');
+assert(profileRowsZero.some(row => row.some(btn => btn.text.includes('Инструкция'))), 'Should show instruction button in profile');
+assert(profileRowsZero.some(row => row.some(btn => btn.text.includes('История транзакций'))), 'Should show transaction history in profile');
 
 const profileKbWithCashback = createProfileKeyboard({ totalCashback: 15.5 });
 const profileRowsWithCashback = profileKbWithCashback.inline_keyboard;
@@ -46,12 +50,12 @@ const userMock = {
     wallet_balance: 5.50
 };
 const menuText = getMainMenuText(userMock);
-assert(menuText.includes('🔥 _Всего генераций в системе: 24,850+_'));
+assert(!menuText.includes('Всего генераций в системе'), 'Must not contain fake generation counter (TASK-20)');
 assert(menuText.includes('📊 *Ваш баланс:* 10 видео'));
 assert(menuText.includes('5.50 USDT (~495₽)'));
 assert(!menuText.includes('Omni Flash'), 'Must not contain specific AI model names');
 assert(!menuText.includes('Grok'), 'Must not contain Grok');
-console.log('   ✅ Main menu text formatted correctly with no AI model branding');
+console.log('   ✅ Main menu text formatted correctly without fake stats and no AI model branding');
 
 // 4. Profile copy
 console.log('\n4️⃣ Profile Copy & Withdrawal');

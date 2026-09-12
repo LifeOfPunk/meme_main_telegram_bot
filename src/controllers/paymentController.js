@@ -213,10 +213,6 @@ export async function handlePayCard(ctx, packageKey = 'pack_10') {
         const keyboard = {
             inline_keyboard: [
                 [{ text: '💳 Оплатить картой', url: paymentUrl }],
-                [
-                    { text: '📝 Оферта', url: 'https://aiviral.agency/dogovor-oferta/' },
-                    { text: '🔒 Политика', url: 'https://aiviral.agency/politika-konfidencialnosti/' }
-                ],
                 [{ text: '❓ Обратная связь', url: 'https://t.me/aiviral_main' }],
                 [{ text: '🔙 Назад к пакетам', callback_data: 'pay_card_packages' }]
             ]
@@ -398,10 +394,6 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposi
             message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
         }
         
-        message += `⚠️ <b>ВНИМАНИЕ: Если отправляете с БИРЖИ (Gate, Bybit, Binance, OKX):</b>\n`;
-        message += `Биржа удерживает фиксированную комиссию из суммы вывода!\n`;
-        message += `Убедитесь, что чистая сумма поступления <b>не менее 0.50 USDT</b>.\n`;
-        message += `<i>Вся фактически поступившая сумма зачисляется 1 к 1 на ваш баланс.</i>\n\n`;
         message += `💡 <i>Нажмите на адрес выше, чтобы скопировать</i>\n`;
         message += `⏰ Реквизиты активны 30 минут.\n`;
         message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
@@ -800,4 +792,103 @@ export async function handleProfileHistory(ctx) {
     }
 }
 
+// Обработчик истории транзакций пользователя (TASK-20)
+export async function handleProfileTransactions(ctx) {
+    try {
+        await safeAnswerCbQuery(ctx);
+        const userId = ctx.from.id;
+        const allOrders = await orderService.getUserOrders(userId);
+
+        if (!allOrders || allOrders.length === 0) {
+            const emptyText = '💳 <b>История транзакций</b>\n\n' +
+                'У вас пока нет транзакций или платежей.\n\n' +
+                '💡 Чтобы пополнить баланс, выберите пакет в меню «Пополнить баланс».';
+
+            const emptyKeyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Пополнить баланс', callback_data: 'buy' }],
+                    [{ text: '🔙 Назад в профиль', callback_data: 'profile' }],
+                    [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+                ]
+            };
+
+            return await ctx.editMessageText(emptyText, {
+                parse_mode: 'HTML',
+                reply_markup: emptyKeyboard
+            });
+        }
+
+        // Сортировка от новых к старым
+        allOrders.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+        const page = parseInt(ctx.match?.[1]) || 0;
+        const perPage = 5;
+        const totalPages = Math.max(1, Math.ceil(allOrders.length / perPage));
+
+        const startIdx = page * perPage;
+        const endIdx = startIdx + perPage;
+        const orders = allOrders.slice(startIdx, endIdx);
+
+        let message = `💳 <b>История транзакций</b> (${allOrders.length} всего)\n`;
+        message += `📄 Страница ${page + 1} из ${totalPages}\n\n`;
+
+        orders.forEach((ord, idx) => {
+            const isPaid = Boolean(ord.isPaid);
+            const statusEmoji = isPaid ? '✅' : '⏳';
+            const statusText = isPaid ? 'Оплачен' : 'Ожидает оплаты';
+            const date = ord.createdAt
+                ? new Date(ord.createdAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })
+                : '—';
+            const amount = ord.isFiat ? `${ord.amount}₽` : `${ord.amount} USDT`;
+            const pkgTitle = PACKAGES[ord.package]?.title || ord.package || 'Пополнение';
+            const globalIdx = startIdx + idx + 1;
+            const payType = ord.isFiat ? 'Банковская карта (Lava)' : `Крипта (${ord.currency || 'USDT'})`;
+
+            message += `${globalIdx}. ${statusEmoji} <b>${pkgTitle}</b> — <b>${amount}</b>\n`;
+            message += `   ├ Статус: ${statusText}\n`;
+            message += `   ├ Метод: ${payType}\n`;
+            message += `   └ 📅 ${date} (МСК)\n\n`;
+        });
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        // Пагинация
+        if (totalPages > 1) {
+            const navButtons = [];
+            if (page > 0) {
+                navButtons.push({ text: '⬅️ Назад', callback_data: `profile_transactions:${page - 1}` });
+            }
+            if (page < totalPages - 1) {
+                navButtons.push({ text: 'Вперёд ➡️', callback_data: `profile_transactions:${page + 1}` });
+            }
+            if (navButtons.length > 0) {
+                keyboard.inline_keyboard.push(navButtons);
+            }
+        }
+
+        // Если у пользователя есть ожидающие крипто-заказы, добавим кнопку быстрой проверки последнего
+        const pendingCrypto = allOrders.find(o => !o.isPaid && !o.isFiat && o.orderId);
+        if (pendingCrypto) {
+            keyboard.inline_keyboard.push([{
+                text: '🔄 Проверить статус крипто-оплаты',
+                callback_data: `check_payment_${pendingCrypto.orderId}`
+            }]);
+        }
+
+        keyboard.inline_keyboard.push([{ text: '🔙 Назад в профиль', callback_data: 'profile' }]);
+        keyboard.inline_keyboard.push([{ text: '🏠 Главное меню', callback_data: 'main_menu' }]);
+
+        await ctx.editMessageText(message, {
+            parse_mode: 'HTML',
+            reply_markup: keyboard
+        });
+    } catch (err) {
+        console.error('❌ Error in handleProfileTransactions:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+}
+
 export { handleWithdraw } from '../handlers/user_handlers/user_menu.js';
+

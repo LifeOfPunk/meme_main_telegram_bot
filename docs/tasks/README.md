@@ -12,6 +12,7 @@
 - ✅ **TASK-07**: Реорганизация меню Профиля, баланса USDT/RUB и вывода — [`TASK-07-profile-menu-reorganization.md`](TASK-07-profile-menu-reorganization.md) `[Done]`
 - ✅ **TASK-08**: Кастомные эмодзи и иконки в Telegram — [`TASK-08-telegram-custom-animated-emojis.md`](TASK-08-telegram-custom-animated-emojis.md) `[Done]`
 - ✅ **TASK-14**: Инлайн-кнопки по дизайн-системе (зеленая/бесцветная логика) — [`TASK-14-colored-inline-buttons-design-system.md`](TASK-14-colored-inline-buttons-design-system.md) `[Done]`
+- ✅ **TASK-20**: Доработка UX бота: очистка текстов, скрытие кнопок оферты, обмен меню и история транзакций — [`TASK-20-ux-refinement-card-crypto-menus-and-tx-history.md`](TASK-20-ux-refinement-card-crypto-menus-and-tx-history.md) `[Done]`
 
 ### EPIC-2: Шаблонизатор мемов, медиа-активы и генерация
 *Медиа-группа шаблона (видео-превью + статистика виральности) и валидация промптов.*

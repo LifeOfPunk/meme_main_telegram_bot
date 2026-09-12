@@ -1603,6 +1603,60 @@ bot.action('profile', (ctx) => handleProfile(ctx));
 bot.action('withdraw', (ctx) => handleWithdraw(ctx));
 bot.action('profile_history', (ctx) => paymentController.handleProfileHistory(ctx));
 bot.action(/^profile_history:(\d+)$/, (ctx) => paymentController.handleProfileHistory(ctx));
+bot.action('profile_transactions', (ctx) => paymentController.handleProfileTransactions(ctx));
+bot.action(/^profile_transactions:(\d+)$/, (ctx) => paymentController.handleProfileTransactions(ctx));
+
+// Админ-команды синхронизации оплат для администраторов (TASK-20)
+bot.command('sync_my_orders', async (ctx) => {
+    try {
+        const userId = ctx.from.id;
+        const { ADMINS } = await import('./config.js');
+        if (!ADMINS.includes(userId)) return;
+
+        const userOrders = await orderService.getUserOrders(userId);
+        if (!userOrders || userOrders.length === 0) {
+            return await ctx.reply('🔍 Заказов не найдено.');
+        }
+
+        let report = `🔍 Найдено заказов: ${userOrders.length}\n\n`;
+        for (const ord of userOrders) {
+            report += `• Заказ: ${ord.orderId}\n  Сумма: ${ord.amount} (${ord.isFiat ? 'карта' : 'крипта'})\n  Статус: ${ord.isPaid ? '✅ Оплачен' : '⏳ Ожидает'}\n\n`;
+        }
+        await ctx.reply(report);
+    } catch (e) {
+        await ctx.reply('Ошибка: ' + e.message);
+    }
+});
+
+bot.command('mark_paid', async (ctx) => {
+    try {
+        const userId = ctx.from.id;
+        const { ADMINS, PACKAGES } = await import('./config.js');
+        if (!ADMINS.includes(userId)) return;
+
+        const parts = ctx.message.text.split(' ');
+        const targetOrderId = parts[1]?.trim();
+        if (!targetOrderId) {
+            return await ctx.reply('Использование: /mark_paid <orderId>');
+        }
+
+        const ord = await orderService.getOrderById(targetOrderId);
+        if (!ord) return await ctx.reply(`❌ Заказ ${targetOrderId} не найден`);
+
+        await orderService.markAsPaid(targetOrderId);
+        const pkg = PACKAGES[ord.package];
+        if (pkg) {
+            await userService.addPaidQuota(ord.userId, pkg.generations);
+        }
+        if (!ord.isFiat) {
+            await userService.addWalletBalance(ord.userId, Number(ord.amount || 0));
+        }
+
+        await ctx.reply(`✅ Заказ ${targetOrderId} отмечен как оплаченный. Баланс пользователя ${ord.userId} пополнен на ${pkg ? pkg.generations + ' видео' : ord.amount + ' USDT'}.`);
+    } catch (e) {
+        await ctx.reply('Ошибка: ' + e.message);
+    }
+});
 
 // Обработка реферальной программы
 bot.action('referral', (ctx) => paymentController.handleReferral(ctx));
