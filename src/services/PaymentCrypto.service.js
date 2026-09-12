@@ -11,23 +11,34 @@ export class PaymentCryptoService {
     }
 
     // Создание крипто-платежа
-    async createPayment({ userId, amount, payCurrency, package: pkg }) {
+    async createPayment({ userId, amount = 0.50, payCurrency, package: pkg = 'deposit' }) {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('🚀 [PaymentCrypto] Starting createPayment');
         console.log(`📊 Input: userId=${userId}, amount=${amount}, currency=${payCurrency}, package=${pkg}`);
         
         try {
+            // Валидация лимитов депозита: 0.50 - 10000.00 USDT
+            const numAmount = Number(amount || 0.50);
+            if (numAmount < 0.50 || numAmount > 10000.00) {
+                return { error: 'Сумма депозита должна быть от 0.50 до 10 000.00 USDT' };
+            }
+
             const orderService = new OrderService();
             
             // Проверка на существующий заказ
-            const userOrders = await orderService.getOrdersByUserId(userId);
-            const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
+            let existingOrder = null;
+            try {
+                const userOrders = await orderService.getOrdersByUserId(userId);
+                const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
 
-            const existingOrder = userOrders.find(order =>
-                order?.input?.amount === amount &&
-                new Date(order?.output?.expiredAt) < tenMinutesFromNow &&
-                order?.input?.payCurrency === payCurrency
-            );
+                existingOrder = userOrders.find(order =>
+                    order?.input?.amountUSD === numAmount &&
+                    new Date(order?.output?.expDate || order?.output?.expiredAt) > new Date() &&
+                    order?.input?.payCurrency === payCurrency
+                );
+            } catch (orderCheckErr) {
+                console.warn('⚠️ Could not check existing orders:', orderCheckErr.message);
+            }
 
             if (existingOrder) {
                 console.log(`♻️ Reusing existing order: ${existingOrder.orderId}`);
@@ -37,11 +48,14 @@ export class PaymentCryptoService {
             const orderId = orderService.generateOrderId('CRYPTO');
             console.log(`📝 Generated order ID: ${orderId}`);
 
+            // Нормализация валюты для 0xProcessing (BNB в 0xProcessing называется 'BNB', а не 'BNB (BEP20)')
+            const currencyForProcessing = payCurrency === 'BNB (BEP20)' ? 'BNB' : payCurrency;
+
             // Данные для 0xProcessing (БЕЗ amount - он рассчитается на их стороне)
             const data = {
                 merchantID: this.merchant,
                 billingID: orderId,
-                currency: payCurrency,
+                currency: currencyForProcessing,
                 email: `user${userId}@viralapp.bot`,
                 clientId: userId.toString()
             };
@@ -75,16 +89,16 @@ export class PaymentCryptoService {
                 console.log('📦 Received JSON response (direct API format)');
                 console.log('📥 Data:', JSON.stringify(responseData, null, 2));
                 
-                // Преобразуем в нужный формат
+                // Преобразуем в нужный формат (без искусственного формирования 404 URL)
                 const uid = (responseData.id || responseData.uid).toString();
                 responseData = {
                     uid: uid,
                     id: uid,
-                    paymentUrl: responseData.paymentUrl || `https://app.0xprocessing.com/payment/${uid}`,
+                    paymentUrl: responseData.paymentUrl || responseData.url || null,
                     address: responseData.address,
                     qrCode: responseData.qrCode,
                     rate: responseData.rate ? parseFloat(responseData.rate) : null,
-                    minimumAmount: responseData.minimumAmount ? parseFloat(responseData.minimumAmount) : null,
+                    minimumAmount: responseData.minimumAmount ? parseFloat(responseData.minimumAmount) : 0.50,
                     destinationTag: responseData.destinationTag,
                     expDate: responseData.expDate
                 };
@@ -127,11 +141,11 @@ export class PaymentCryptoService {
                     const uid = uidMatch[1];
                     console.log(`✅ Extracted UID: ${uid}`);
                     
-                    // Собираем данные из HTML
+                    // Собираем данные из HTML (без фиктивных 404 URL)
                     responseData = {
                         uid: uid,
                         id: uid,
-                        paymentUrl: `https://app.0xprocessing.com/payment/${uid}`,
+                        paymentUrl: null,
                         expDate: expDateMatch ? expDateMatch[1] : new Date(Date.now() + 30 * 60 * 1000).toISOString()
                     };
                     
@@ -177,39 +191,22 @@ export class PaymentCryptoService {
             let amountInCrypto;
             const isUsdPegged = payCurrency.includes('USDT') || payCurrency.includes('USDC');
             if (isUsdPegged) {
-                amountInCrypto = new BigNumber(amount).toFixed(2);
+                amountInCrypto = new BigNumber(numAmount).toFixed(2);
             } else {
                 const effectiveRate = responseData?.rate;
                 if (effectiveRate && !isNaN(effectiveRate) && Number(effectiveRate) > 0) {
-                    amountInCrypto = new BigNumber(amount).div(effectiveRate).toFixed(5);
+                    amountInCrypto = new BigNumber(numAmount).div(effectiveRate).toFixed(5);
                 } else {
                     console.warn(`⚠️ Rate not available for ${payCurrency}, using default amount`);
-                    amountInCrypto = new BigNumber(amount).toFixed(5);
+                    amountInCrypto = new BigNumber(numAmount).toFixed(5);
                 }
             }
 
-            data.amountUSD = amount;
+            data.amountUSD = numAmount;
             data.amount = amountInCrypto;
             data.package = pkg;
             data.payCurrency = payCurrency;
             data.createdAt = new Date().toISOString();
-
-            // Проверка минимальной суммы
-            try {
-                const coinInfoResponse = await axios.get(
-                    `${this.baseUrl}/Api/CoinInfo/${payCurrency}`,
-                    { timeout: 5000 }
-                );
-                
-                if (coinInfoResponse.data && coinInfoResponse.data.min) {
-                    if (new BigNumber(data.amount).isLessThan(coinInfoResponse.data.min)) {
-                        console.log(`❌ Amount ${data.amount} < minimum ${coinInfoResponse.data.min}`);
-                        return { error: 'Сумма оплаты слишком мала для этой сети. Попробуйте другую.' };
-                    }
-                }
-            } catch (minCheckError) {
-                console.warn(`⚠️ Could not check minimum amount, skipping:`, minCheckError.message);
-            }
             
             console.log(`📥 Final Data:`, JSON.stringify(responseData, null, 2));
 
@@ -222,14 +219,18 @@ export class PaymentCryptoService {
                 isPaid: false,
                 isFiat: false,
                 package: pkg,
-                amount: amount,
+                amount: numAmount,
                 cryptoAmount: amountInCrypto,
                 currency: payCurrency
             };
 
             console.log('💾 Saving order to database...');
-            await orderService.createOrder(orderData);
-            console.log(`✅ Order saved: ${orderId}`);
+            try {
+                await orderService.createOrder(orderData);
+                console.log(`✅ Order saved: ${orderId}`);
+            } catch (redisErr) {
+                console.warn('⚠️ Could not save order to Redis (offline mode):', redisErr.message);
+            }
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
             return orderData;

@@ -8,7 +8,7 @@ import { GenerationService } from './services/Generation.service.js';
 import { ReferralService } from './services/Referral.service.js';
 import { SubscriptionService } from './services/Subscription.service.js';
 import { errorLogger } from './services/ErrorLogger.service.js';
-import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_BONUS, EXPERT_CASHBACK_PERCENT, BACK_TO_MENU, GENDER_CHOICE, CONFIRM_GENERATION } from './config.js';
+import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_BONUS, EXPERT_CASHBACK_PERCENT, BACK_TO_MENU, GENDER_CHOICE, CONFIRM_GENERATION, GENERATION_COST_USDT, NO_BALANCE_KEYBOARD } from './config.js';
 import { 
     createCatalogKeyboard, 
     createCryptoKeyboard, 
@@ -19,7 +19,7 @@ import {
 } from './screens/keyboards.js';
 import { getMemeById } from './utils/memeLoader.js';
 import { registerSocialGiftHandlers } from './handlers/user_handlers/social_gift_handler.js';
-import { registerUserMenuHandlers } from './handlers/user_handlers/user_menu.js';
+import { registerUserMenuHandlers, handleProfile, handleWithdraw } from './handlers/user_handlers/user_menu.js';
 
 // Проверка токена бота
 if (!process.env.BOT_TOKEN) {
@@ -237,8 +237,7 @@ bot.start(async (ctx) => {
                 });
             }
         } else {
-            // Для существующих пользователей всегда показываем главное меню с удалением reply-клавиатуры
-            await ctx.reply('🚀 Загрузка меню...', { reply_markup: { remove_keyboard: true } });
+            // Для существующих пользователей всегда показываем главное меню
             const mainMenu = await createMainMenuKeyboard(userId);
             await ctx.reply(MESSAGES.MAIN_MENU, { 
                 reply_markup: mainMenu
@@ -492,7 +491,25 @@ bot.action('create_video_free', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
         const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
         ctx.session = ctx.session || {};
+
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        if (freeQuota <= 0) {
+            if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+                ctx.session.generationMode = 'paid';
+                return await showCreateVideoMenu(ctx);
+            }
+            try {
+                return await ctx.editMessageText(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+            } catch {
+                return await ctx.reply(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+            }
+        }
+
         ctx.session.generationMode = 'free';
 
         // Проверяем обязательную подписку на канал для бесплатного режима
@@ -534,18 +551,53 @@ bot.action('create_video_free', async (ctx) => {
 bot.action('create_video_paid', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
+        const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
         ctx.session = ctx.session || {};
-        ctx.session.generationMode = 'paid';
 
-        // Платный режим: подписка на канал НЕ проверяется
-        await showCreateVideoMenu(ctx);
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            ctx.session.generationMode = 'paid';
+            return await showCreateVideoMenu(ctx);
+        }
+
+        if (freeQuota > 0) {
+            ctx.session.generationMode = 'free';
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                return await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+                            ]
+                        }
+                    }
+                );
+            }
+            return await showCreateVideoMenu(ctx);
+        }
+
+        // Если баланс и квоты нулевые (TASK-15)
+        try {
+            await ctx.editMessageText(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+        } catch {
+            await ctx.reply(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+        }
     } catch (err) {
         console.error('❌ Error in create_video_paid:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 });
 
-// Обработка общего действия создания видео (для обратной совместимости кнопок повтора)
+// Обработка единого действия создания видео (РОУТЕР КВОТ И БАЛАНСА TASK-15)
 bot.action('create_video', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
@@ -553,10 +605,12 @@ bot.action('create_video', async (ctx) => {
         const user = await userService.getUser(userId);
         ctx.session = ctx.session || {};
 
-        if ((user?.paid_quota || 0) > 0) {
-            ctx.session.generationMode = 'paid';
-            await showCreateVideoMenu(ctx);
-        } else {
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        // 1. Если free_quota > 0 -> расходовать бесплатную квоту
+        if (freeQuota > 0) {
             ctx.session.generationMode = 'free';
             const isSubscribed = await subscriptionService.checkSubscription(userId);
             if (!isSubscribed) {
@@ -576,6 +630,26 @@ bot.action('create_video', async (ctx) => {
                 return;
             }
             await showCreateVideoMenu(ctx);
+            return;
+        }
+
+        // 2. Если paid_quota > 0 или wallet_balance_usdt >= 0.84 -> расходовать платную квоту / баланс
+        if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            ctx.session.generationMode = 'paid';
+            await showCreateVideoMenu(ctx);
+            return;
+        }
+
+        // 3. Если баланс и квоты нулевые -> при нажатии «🎬 Сгенерировать видео» бот отправляет сообщение:
+        // «🎬 Для генерации видео необходимо пополнить баланс» + кнопка [💳 Пополнить баланс] (callback: buy)
+        try {
+            await ctx.editMessageText(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        } catch {
+            await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
         }
     } catch (err) {
         console.error('❌ Error in create_video:', err);
@@ -590,7 +664,20 @@ bot.action('custom_prompt', async (ctx) => {
         const user = await userService.getUser(userId);
         ctx.session = ctx.session || {};
 
-        const mode = ctx.session.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            return await ctx.editMessageText(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        }
         ctx.session.generationMode = mode;
 
         if (mode === 'free') {
@@ -609,31 +696,6 @@ bot.action('custom_prompt', async (ctx) => {
                         }
                     }
                 );
-                return;
-            }
-
-            if ((user?.free_quota || 0) <= 0) {
-                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
-                            [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
-                        ]
-                    }
-                });
-                return;
-            }
-        } else {
-            // Платный режим: подписку не требуем
-            if ((user?.paid_quota || 0) <= 0) {
-                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
-                            [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
-                        ]
-                    }
-                });
                 return;
             }
         }
@@ -734,7 +796,25 @@ bot.action(/meme_(.+)/, async (ctx) => {
         const user = await userService.getUser(userId);
         ctx.session = ctx.session || {};
 
-        const mode = ctx.session.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            return await ctx.editMessageText(MESSAGES.NO_BALANCE, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '💳 Пополнить баланс', callback_data: 'buy' }],
+                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                    ]
+                }
+            });
+        }
         ctx.session.generationMode = mode;
 
         if (mode === 'free') {
@@ -753,31 +833,6 @@ bot.action(/meme_(.+)/, async (ctx) => {
                         }
                     }
                 );
-                return;
-            }
-
-            if ((user?.free_quota || 0) <= 0) {
-                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
-                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                        ]
-                    }
-                });
-                return;
-            }
-        } else {
-            // Платный режим: подписка не требуется
-            if ((user?.paid_quota || 0) <= 0) {
-                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
-                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                        ]
-                    }
-                });
                 return;
             }
         }
@@ -894,9 +949,8 @@ bot.on('text', async (ctx) => {
         
         ctx.session = ctx.session || {};
         
-        // Обработка кнопки START (удаляем reply-клавиатуру, чтобы кнопка START не залипала на Desktop)
+        // Обработка кнопки START
         if (ctx.message.text === 'START') {
-            await ctx.reply('🚀 Загрузка меню...', { reply_markup: { remove_keyboard: true } });
             const mainMenu = await createMainMenuKeyboard(userId);
             await ctx.reply(MESSAGES.MAIN_MENU, { 
                 reply_markup: mainMenu
@@ -918,7 +972,21 @@ bot.on('text', async (ctx) => {
             
             const userId = ctx.from.id;
             const user = await userService.getUser(userId);
-            const mode = ctx.session?.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+            const freeQuota = user?.free_quota || 0;
+            const paidQuota = user?.paid_quota || 0;
+            const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+            // Роутер квот и баланса (TASK-15)
+            let mode = 'free';
+            if (freeQuota > 0) {
+                mode = 'free';
+            } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+                mode = 'paid';
+            } else {
+                return await ctx.reply(MESSAGES.NO_BALANCE, {
+                    reply_markup: NO_BALANCE_KEYBOARD
+                });
+            }
 
             // Если бесплатный режим - строгая проверка подписки перед списанием
             if (mode === 'free') {
@@ -931,10 +999,12 @@ bot.on('text', async (ctx) => {
                 }
             }
 
-            // Списываем квоту соответствующего режима
-            const deducted = await userService.deductQuota(userId, mode);
-            if (!deducted) {
-                return await ctx.reply('❌ Недостаточно генераций');
+            // Списываем через единый роутер
+            const deductResult = await userService.deductGenerationCost(userId);
+            if (!deductResult.success) {
+                return await ctx.reply(MESSAGES.NO_BALANCE, {
+                    reply_markup: NO_BALANCE_KEYBOARD
+                });
             }
             
             // Создаём генерацию с пользовательским промптом
@@ -944,12 +1014,13 @@ bot.on('text', async (ctx) => {
                 memeId: 'custom',
                 name: 'Custom',
                 gender: 'male',
-                customPrompt: prompt
+                customPrompt: prompt,
+                deductedType: deductResult.type
             });
             
             if (generation.error) {
-                // Возвращаем квоту при ошибке
-                await userService.refundQuota(userId, mode === 'paid');
+                // Возвращаем средства при ошибке
+                await userService.refundGenerationCost(userId, deductResult.type);
                 return await ctx.reply('❌ Ошибка создания генерации: ' + generation.error);
             }
             
@@ -1003,10 +1074,10 @@ bot.on('text', async (ctx) => {
             
             const userId = ctx.from.id;
             
-            // Списываем квоту
-            const deducted = await userService.deductQuota(userId);
-            if (!deducted) {
-                return await ctx.reply('❌ Недостаточно бесплатных генераций');
+            // Списываем через единый роутер
+            const deductResult = await userService.deductGenerationCost(userId);
+            if (!deductResult.success) {
+                return await ctx.reply(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
             }
             
             // Создаём генерацию с пользовательским промптом
@@ -1016,12 +1087,13 @@ bot.on('text', async (ctx) => {
                 memeId: 'custom',
                 name: 'Custom',
                 gender: 'male',
-                customPrompt: prompt
+                customPrompt: prompt,
+                deductedType: deductResult.type
             });
             
             if (generation.error) {
                 // Возвращаем квоту при ошибке
-                await userService.refundQuota(userId);
+                await userService.refundGenerationCost(userId, deductResult.type);
                 return await ctx.reply('❌ Ошибка создания генерации: ' + generation.error);
             }
             
@@ -1153,7 +1225,21 @@ bot.action('confirm_gen', async (ctx) => {
         const gender = ctx.session.generationGender;
 
         const user = await userService.getUser(userId);
-        const mode = ctx.session?.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            await safeAnswerCbQuery(ctx, 'Для генерации видео необходимо пополнить баланс', { show_alert: true });
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        }
 
         // Если бесплатный режим - строгая живая проверка подписки прямо перед запуском нейросети
         if (mode === 'free') {
@@ -1167,10 +1253,13 @@ bot.action('confirm_gen', async (ctx) => {
             }
         }
 
-        // Списываем квоту соответствующего режима
-        const deducted = await userService.deductQuota(userId, mode);
-        if (!deducted) {
-            return await safeAnswerCbQuery(ctx, 'Недостаточно генераций', { show_alert: true });
+        // Списываем через единый роутер (TASK-15)
+        const deductResult = await userService.deductGenerationCost(userId);
+        if (!deductResult.success) {
+            await safeAnswerCbQuery(ctx, 'Недостаточно средств на балансе', { show_alert: true });
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
         }
         
         // Создаём генерацию
@@ -1179,12 +1268,13 @@ bot.action('confirm_gen', async (ctx) => {
             chatId: ctx.chat.id, // Добавляем chatId для уведомлений
             memeId,
             name,
-            gender
+            gender,
+            deductedType: deductResult.type
         });
         
         if (generation.error) {
             // Возвращаем квоту при ошибке
-            await userService.refundQuota(userId, mode === 'paid');
+            await userService.refundGenerationCost(userId, deductResult.type);
             return await safeAnswerCbQuery(ctx, 'Ошибка создания генерации', { show_alert: true });
         }
         
@@ -1508,8 +1598,9 @@ bot.action(/select_package_(.+)/, (ctx) => {
 bot.action('about', (ctx) => paymentController.handleAbout(ctx));
 
 // Обработка личного кабинета
-bot.command('profile', (ctx) => paymentController.handleProfile(ctx));
-bot.action('profile', (ctx) => paymentController.handleProfile(ctx));
+bot.command('profile', (ctx) => handleProfile(ctx));
+bot.action('profile', (ctx) => handleProfile(ctx));
+bot.action('withdraw', (ctx) => handleWithdraw(ctx));
 bot.action('profile_history', (ctx) => paymentController.handleProfileHistory(ctx));
 bot.action(/^profile_history:(\d+)$/, (ctx) => paymentController.handleProfileHistory(ctx));
 
@@ -1519,9 +1610,15 @@ bot.action('ref_user', (ctx) => paymentController.handleRefUser(ctx));
 bot.action('ref_expert', (ctx) => paymentController.handleRefExpert(ctx));
 
 // Обработка оплаты
+bot.action('pay_crypto_deposit', (ctx) => {
+    paymentController.handlePayCrypto(ctx, 'deposit');
+});
+bot.action('pay_crypto', (ctx) => {
+    paymentController.handlePayCrypto(ctx, 'deposit');
+});
 bot.action(/pay_card_oneclick_(.+)/, (ctx) => {
     const packageKey = ctx.match[1];
-    paymentController.handlePayCardOneClick(ctx, packageKey);
+    paymentController.handlePayCard(ctx, packageKey);
 });
 bot.action(/pay_card_(.+)/, (ctx) => {
     const packageKey = ctx.match[1];
@@ -1556,6 +1653,7 @@ bot.action(/chain_(.+)/, (ctx) => {
     // Формат: chain_CRYPTO_CHAIN_PACKAGE
     // chain_TON_TON_single => ['chain', 'TON', 'TON', 'single']
     // chain_USDT_USDT_(TRC20)_pack_10 => ['chain', 'USDT', 'USDT', '(TRC20)', 'pack', '10']
+    // chain_USDT_USDT_(BEP20)_deposit => ['chain', 'USDT', 'USDT', '(BEP20)', 'deposit']
     
     if (parts.length < 4) {
         console.error('❌ Invalid chain callback format:', ctx.callbackQuery.data);
@@ -1564,19 +1662,19 @@ bot.action(/chain_(.+)/, (ctx) => {
     
     const crypto = parts[1]; // USDT, USDC, TON
     
-    // Находим packageKey - это последний сегмент, который начинается с 'single', 'pack' или является 'pack_X'
+    // Находим packageKey - это последний сегмент, который начинается с 'single', 'deposit', 'pack' или является 'pack_X'
     let packageKey = '';
     let chainParts = [];
     
     // Идем с конца и собираем packageKey
     for (let i = parts.length - 1; i >= 2; i--) {
-        if (parts[i].match(/^(single|pack|10|50|100|500)$/)) {
+        if (parts[i].match(/^(single|deposit|pack|10|50|100|500)$/)) {
             if (parts[i] === 'pack' && parts[i + 1]) {
                 packageKey = `pack_${parts[i + 1]}`;
                 chainParts = parts.slice(2, i);
                 break;
-            } else if (parts[i] === 'single') {
-                packageKey = 'single';
+            } else if (parts[i] === 'single' || parts[i] === 'deposit') {
+                packageKey = parts[i];
                 chainParts = parts.slice(2, i);
                 break;
             }

@@ -48,23 +48,21 @@ export async function handleBuy(ctx) {
         
         const buyText = `🎬 Чтобы сгенерировать видео, вам нужно их сначала купить, и после этого вы сможете уже генерировать новые видео.\n\n💎 Выберите подходящий пакет:`;
         
+        const keyboard = {
+            inline_keyboard: [
+                ...packageButtons,
+                [{ text: '💎 Крипта (Пополнить баланс)', callback_data: 'pay_crypto_deposit' }],
+                [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+            ]
+        };
+        
         try {
             await ctx.editMessageText(buyText, {
-                reply_markup: {
-                    inline_keyboard: [
-                        ...packageButtons,
-                        [{ text: '🔙 Назад', callback_data: 'main_menu' }]
-                    ]
-                }
+                reply_markup: keyboard
             });
         } catch (editErr) {
             await ctx.reply(buyText, {
-                reply_markup: {
-                    inline_keyboard: [
-                        ...packageButtons,
-                        [{ text: '🔙 Назад', callback_data: 'main_menu' }]
-                    ]
-                }
+                reply_markup: keyboard
             });
         }
     } catch (err) {
@@ -140,45 +138,14 @@ export async function handleSelectPackage(ctx, packageKey) {
     }
 }
 
-// Обработчик оплаты картой
-export async function handlePayCard(ctx, packageKey = 'single') {
+// Обработчик оплаты картой (Lava 1-Click без ввода email)
+export async function handlePayCard(ctx, packageKey = 'pack_10') {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
-        ctx.session = ctx.session || {};
-        ctx.session.waitingFor = 'email';
-        ctx.session.selectedPackage = packageKey;
-        
-        const pkg = PACKAGES[packageKey];
+        const pkg = PACKAGES[packageKey] || PACKAGES['pack_10'];
         if (!pkg) {
-            return await safeAnswerCbQuery(ctx, 'Пакет не найден');
-        }
-        
-        await ctx.editMessageText(
-            MESSAGES.EMAIL_REQUEST(pkg),
-            {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '⚡ Оплатить в 1 клик (без ввода email)', callback_data: `pay_card_oneclick_${packageKey}` }],
-                        [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
-                    ]
-                }
-            }
-        );
-    } catch (err) {
-        console.error('❌ Error in handlePayCard:', err);
-        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
-    }
-}
-
-// Обработчик оплаты картой в 1 клик (без ручного ввода email)
-export async function handlePayCardOneClick(ctx, packageKey = 'single') {
-    try {
-        await safeAnswerCbQuery(ctx);
-        
-        const pkg = PACKAGES[packageKey];
-        if (!pkg) {
-            return await safeAnswerCbQuery(ctx, 'Пакет не найден');
+            return await safeAnswerCbQuery(ctx, 'Пакет не найден', { show_alert: true });
         }
         
         const userId = ctx.from.id;
@@ -186,7 +153,17 @@ export async function handlePayCardOneClick(ctx, packageKey = 'single') {
         
         ctx.session = ctx.session || {};
         delete ctx.session.waitingFor;
+        ctx.session.selectedPackage = packageKey;
         ctx.session.email = email;
+        
+        // Показываем пользователю процесс генерации инвойса
+        try {
+            await ctx.editMessageText('⏳ Создаем ссылку на оплату картой...', {
+                reply_markup: { inline_keyboard: [] }
+            });
+        } catch (e) {
+            // ignore
+        }
         
         const payment = await paymentFiatService.createPayment({
             userId,
@@ -197,33 +174,54 @@ export async function handlePayCardOneClick(ctx, packageKey = 'single') {
         });
         
         if (payment.error) {
-            return await ctx.reply('❌ Ошибка создания платежа: ' + payment.error);
+            const errText = '❌ Ошибка создания платежа: ' + payment.error;
+            const errKeyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
+                ]
+            };
+            try {
+                return await ctx.editMessageText(errText, { reply_markup: errKeyboard });
+            } catch (e) {
+                return await ctx.reply(errText, { reply_markup: errKeyboard });
+            }
         }
         
-        const paymentUrl = payment.output?.paymentUrl || payment.output?.payUrl || payment.output?.url;
+        const paymentUrl = payment.output?.paymentUrl || payment.output?.payUrl || payment.output?.url || (payment.output?.id ? `https://lava.top/invoice/${payment.output.id}` : null);
         
-        await ctx.reply(
-            MESSAGES.PAYMENT_CARD_CONFIRM(pkg),
-            {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '💳 Оплатить картой', url: paymentUrl }],
-                        [{ text: '📝 Договор-оферта', url: 'https://telegra.ph/Dogovor-oferta-11-04' }],
-                        [{ text: '📝 Политика конфиденциальности', url: 'https://telegra.ph/Politika-konfidencialnosti-11-04' }],
-                        [{ text: '❓ Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'aiviral_manager'}` }],
-                        [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
-                    ]
-                }
-            }
-        );
+        const message = MESSAGES.PAYMENT_CARD_CONFIRM(pkg);
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '💳 Оплатить картой', url: paymentUrl }],
+                [{ text: '❓ Обратная связь', url: 'https://t.me/aiviral_main' }],
+                [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
+            ]
+        };
+        
+        try {
+            await ctx.editMessageText(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        }
     } catch (err) {
-        console.error('❌ Error in handlePayCardOneClick:', err);
+        console.error('❌ Error in handlePayCard:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 }
 
+// Обработчик оплаты картой в 1 клик (без ручного ввода email)
+export async function handlePayCardOneClick(ctx, packageKey = 'pack_10') {
+    return await handlePayCard(ctx, packageKey);
+}
+
 // Обработчик оплаты криптой (выбор криптовалюты в 1 шаг)
-export async function handlePayCrypto(ctx, packageKey = 'single') {
+export async function handlePayCrypto(ctx, packageKey = 'deposit') {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
@@ -231,9 +229,12 @@ export async function handlePayCrypto(ctx, packageKey = 'single') {
         ctx.session.selectedPackage = packageKey;
         
         const pkg = PACKAGES[packageKey];
-        if (!pkg) {
-            return await safeAnswerCbQuery(ctx, 'Пакет не найден', { show_alert: true });
-        }
+        const titleText = pkg ? `🎬 <b>${pkg.title}</b> (${pkg.usdt} USDT)\n` : `💎 <b>Пополнение баланса криптовалютой</b>\n`;
+        const message = `${titleText}\n` +
+            `💰 <b>Свободный депозит:</b> от 0.50 USDT до 10 000.00 USDT\n\n` +
+            `Выберите сеть для оплаты в 1 шаг:`;
+        
+        const backTarget = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'buy';
         
         // 4 кнопки сетей сразу в 1 шаг согласно спецификации TASK-02-03
         const cryptoButtons = [
@@ -241,17 +242,24 @@ export async function handlePayCrypto(ctx, packageKey = 'single') {
             [{ text: '⚡ USDT (BEP20)', callback_data: `chain_USDT_USDT_(BEP20)_${packageKey}` }],
             [{ text: '🟣 USDT (SOL)', callback_data: `chain_USDT_USDT_(SOL)_${packageKey}` }],
             [{ text: '🟡 BNB (BEP20)', callback_data: `chain_BNB_BNB_(BEP20)_${packageKey}` }],
-            [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
+            [{ text: '🔙 Назад', callback_data: backTarget }]
         ];
         
-        await ctx.editMessageText(
-            MESSAGES.PAYMENT_CRYPTO_SELECT(pkg),
-            { 
+        try {
+            await ctx.editMessageText(message, { 
+                parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: cryptoButtons
                 }
-            }
-        );
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: cryptoButtons
+                }
+            });
+        }
     } catch (err) {
         console.error('❌ Error in handlePayCrypto:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
@@ -310,8 +318,8 @@ export async function handleCryptoSelect(ctx, crypto, packageKey = 'single') {
     }
 }
 
-// Обработчик выбора сети
-export async function handleChainSelect(ctx, crypto, chain, packageKey = 'single') {
+// Обработчик выбора сети (0xProcessing)
+export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposit') {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
@@ -323,99 +331,65 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'single
         const userId = ctx.from.id;
         const payCurrency = chain.replace(/_/g, ' ');
         const pkg = PACKAGES[packageKey];
+        const targetAmount = pkg ? pkg.usdt : 0.50;
         
         console.log('💰 Payment params prepared:');
         console.log(`  - userId: ${userId}`);
-        console.log(`  - payCurrency BEFORE: "${chain}"`);
-        console.log(`  - payCurrency AFTER: "${payCurrency}"`);
-        console.log(`  - amount: ${pkg.usdt} USDT`);
+        console.log(`  - payCurrency: "${payCurrency}"`);
+        console.log(`  - amount: ${targetAmount} USDT`);
         console.log(`  - package: ${packageKey}`);
-        console.log(`  - generations: ${pkg.generations}`);
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         
         console.log('🚀 Calling paymentCryptoService.createPayment...');
         const payment = await paymentCryptoService.createPayment({
             userId,
-            amount: pkg.usdt,
+            amount: targetAmount,
             payCurrency,
             package: packageKey
         });
         
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('📥 Payment service response received');
-        console.log(`Response type: ${typeof payment}`);
-        console.log(`Has error: ${!!payment.error}`);
-        
         if (payment.error) {
             console.error('❌ Payment creation failed with error:', payment.error);
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return await safeAnswerCbQuery(ctx, payment.error, { show_alert: true });
         }
         
-        console.log('✅ Payment created successfully!');
-        console.log(`Order ID: ${payment.orderId}`);
-        console.log('📦 Payment output:', JSON.stringify(payment.output, null, 2));
-        
-        // Извлекаем данные для оплаты
         const address = payment.output?.address || payment.output?.Address || payment.output?.wallet;
-        const amount = payment.cryptoAmount || payment.input?.amount || pkg.usdt;
         const destinationTag = payment.output?.destinationTag || payment.output?.DestinationTag || payment.output?.memo;
         const qrCode = payment.output?.qrCode;
-        
-        console.log('✅ Extracted payment data:', { 
-            orderId: payment.orderId, 
-            address, 
-            amount, 
-            cryptoAmount: payment.cryptoAmount,
-            destinationTag,
-            currency: payment.currency,
-            hasQR: !!qrCode
-        });
-        
-        // Получаем ссылку на страницу оплаты
         const paymentUrl = payment.output?.paymentUrl || null;
         
-        // Формируем сообщение с предупреждением о биржевых комиссиях (TASK-06)
-        let message = `${pkg.emoji} <b>${pkg.title}</b>\n\n`;
-        message += `💰 <b>Сумма к оплате:</b> <code>${amount}</code> ${payCurrency}\n`;
-        message += `💵 <b>Стоимость:</b> $${pkg.usdt}\n\n`;
-        
-        // Если есть адрес, показываем его
-        if (address) {
-            message += `📍 <b>Адрес для оплаты:</b>\n<code>${address}</code>\n\n`;
-            
-            if (destinationTag) {
-                message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
-            }
-            
-            message += `⚠️ <b>ВНИМАНИЕ: Если отправляете с БИРЖИ (Gate, Bybit, Binance):</b>\n`;
-            message += `Биржа удерживает фиксированную комиссию из суммы вывода!\n`;
-            message += `Указывайте сумму вывода так, чтобы на адрес поступило <b>НЕ МЕНЬШЕ</b>:\n`;
-            message += `👉 <code>${amount}</code> ${payCurrency}\n`;
-            message += `<i>При недоплате даже $0.10 платёж не зачтётся автоматически!</i>\n\n`;
-            
-            message += `💡 <i>Нажмите на адрес или сумму, чтобы скопировать</i>\n`;
-            message += `⏰ У вас есть 30 минут для оплаты\n`;
-            message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
-        } else {
-            message += `⚠️ <b>ВНИМАНИЕ: Если отправляете с БИРЖИ (Gate, Bybit, Binance):</b>\n`;
-            message += `Биржа удерживает комиссию из суммы вывода! Сумма поступления должна быть не меньше <code>${amount}</code> ${payCurrency}.\n\n`;
-            message += `⏰ У вас есть 30 минут для оплаты\n\n`;
-            message += `👇 Нажмите кнопку ниже для перехода к странице оплаты\n`;
-            message += `На странице вы увидите адрес кошелька и QR-код`;
+        if (!address) {
+            return await safeAnswerCbQuery(ctx, 'Не удалось получить адрес кошелька. Попробуйте другую сеть.', { show_alert: true });
         }
         
-        const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey, paymentUrl);
+        // Формируем экран пополнения: отображать лимиты Min: 0.50 USDT, Max: 10000 USDT, моноширинный адрес <code>, предупреждение о комиссиях бирж
+        let message = `💎 <b>Пополнение баланса криптовалютой (0xProcessing)</b>\n\n`;
+        message += `🌐 <b>Сеть:</b> <code>${payCurrency}</code>\n`;
+        message += `💵 <b>Лимиты:</b>\n`;
+        message += `├─ <b>Min:</b> 0.50 USDT\n`;
+        message += `└─ <b>Max:</b> 10000.00 USDT\n\n`;
+        message += `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n`;
         
-        // Если есть QR-код, отправляем его как фото
-        if (qrCode && address) {
+        if (destinationTag) {
+            message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
+        }
+        
+        message += `⚠️ <b>ВНИМАНИЕ: Если отправляете с БИРЖИ (Gate, Bybit, Binance, OKX):</b>\n`;
+        message += `Биржа удерживает фиксированную комиссию из суммы вывода!\n`;
+        message += `Убедитесь, что чистая сумма поступления <b>не менее 0.50 USDT</b>.\n`;
+        message += `<i>Вся фактически поступившая сумма зачисляется 1 к 1 на ваш баланс.</i>\n\n`;
+        message += `💡 <i>Нажмите на адрес выше, чтобы скопировать</i>\n`;
+        message += `⏰ Реквизиты активны 30 минут.\n`;
+        message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
+        
+        const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey, address, paymentUrl);
+        
+        // Отправляем нативный QR-код изображением в чат (replyWithPhoto)
+        if (qrCode) {
             try {
-                console.log('📸 Sending QR code...');
-                
-                // Удаляем сообщение с выбором
+                console.log('📸 Sending native QR code photo...');
                 await ctx.deleteMessage().catch(() => {});
                 
-                // Отправляем QR-код
                 await ctx.replyWithPhoto(
                     { source: Buffer.from(qrCode.replace(/^data:image\/\w+;base64,/, ''), 'base64') },
                     {
@@ -424,14 +398,10 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'single
                         reply_markup: keyboard
                     }
                 );
-                
-                console.log('✅ QR code sent successfully');
-                console.log('⏱️ Response time:', Date.now() - ctx.callbackQuery.message.date * 1000, 'ms');
-                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                return; // Важно! Выходим чтобы не пытаться редактировать удаленное сообщение
+                console.log('✅ QR code photo sent successfully');
+                return;
             } catch (qrErr) {
-                console.error('⚠️ Failed to send QR code:', qrErr.message);
-                // Если не удалось отправить QR, пробуем отправить просто текст
+                console.error('⚠️ Failed to send QR code photo:', qrErr.message);
                 try {
                     await ctx.reply(message, {
                         parse_mode: 'HTML',
@@ -439,19 +409,17 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'single
                     });
                     return;
                 } catch (replyErr) {
-                    console.error('⚠️ Failed to send reply:', replyErr.message);
+                    console.error('⚠️ Failed to send fallback text:', replyErr.message);
                 }
             }
         }
         
-        // Без QR-кода или если не удалось отправить - редактируем сообщение
         await ctx.editMessageText(message, {
             parse_mode: 'HTML',
             reply_markup: keyboard
         });
     } catch (err) {
         console.error('❌ Error in handleChainSelect:', err);
-        console.error('Stack:', err.stack);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 }
@@ -492,9 +460,15 @@ export async function handleCheckPayment(ctx, orderId) {
             // Отмечаем заказ как оплаченный
             await orderService.markAsPaid(orderId);
             
-            // Добавляем генерации
+            // Если выбран фиксированный пакет - начисляем генерации
             const pkg = PACKAGES[order.package];
-            await userService.addPaidQuota(order.userId, pkg.generations);
+            if (pkg) {
+                await userService.addPaidQuota(order.userId, pkg.generations);
+            }
+            
+            // Зачисляем фактически поступившую сумму 1 к 1 на баланс USDT (TASK-02-03)
+            const depositAmount = Number(order.amount || 0.50);
+            await userService.addWalletBalance(order.userId, depositAmount);
             
             // Обрабатываем кешбэк
             try {
@@ -504,12 +478,14 @@ export async function handleCheckPayment(ctx, orderId) {
             }
             
             // Уведомляем пользователя
+            const successText = pkg
+                ? `✅ <b>Оплата подтверждена!</b>\n\n${pkg.emoji} ${pkg.title}\n💎 Добавлено генераций: ${pkg.generations}\n\nТеперь вы можете создавать видео!`
+                : `✅ <b>Депозит успешно зачислен!</b>\n\n💰 На ваш баланс зачислено: <b>${depositAmount.toFixed(2)} USDT</b>\n\nТеперь вы можете создавать видео!`;
+            
             await ctx.reply(
-                `✅ Оплата подтверждена!\n\n` +
-                `${pkg.emoji} ${pkg.title}\n` +
-                `💎 Добавлено генераций: ${pkg.generations}\n\n` +
-                `Теперь вы можете создавать видео!`,
+                successText,
                 {
+                    parse_mode: 'HTML',
                     reply_markup: {
                         inline_keyboard: [
                             [{ text: '🎬 Создать видео', callback_data: 'catalog' }],
@@ -542,9 +518,15 @@ export async function handlePaymentSuccess(bot, orderId) {
         // Отмечаем заказ как оплаченный
         await orderService.markAsPaid(orderId);
         
-        // Добавляем генерации пользователю
+        // Добавляем генерации пользователю если фиксированный пакет
         const pkg = PACKAGES[order.package];
-        await userService.addPaidQuota(order.userId, pkg.generations);
+        if (pkg) {
+            await userService.addPaidQuota(order.userId, pkg.generations);
+        }
+        
+        // Зачисляем сумму 1 к 1 на баланс USDT (TASK-02-03)
+        const depositAmount = Number(order.amount || 0.50);
+        await userService.addWalletBalance(order.userId, depositAmount);
         
         // Обрабатываем реферальный кешбэк для эксперта
         const cashbackResult = await referralService.processExpertCashback(order.userId, order.amount);
@@ -603,50 +585,33 @@ export async function handleReferral(ctx) {
         const botName = process.env.BOT_NAME || 'viralapp_official_bot';
         const stats = await referralService.getReferralStats(userId);
         
-        // Проверяем, является ли пользователь экспертом
-        const isExpert = user?.isExpert || false;
+        const refLink = `https://t.me/${botName}?start=expert_${userId}`;
         
-        if (isExpert) {
-            // Для экспертов
-            const refLink = `https://t.me/${botName}?start=expert_${userId}`;
-            
-            let message = MESSAGES.EXPERT_REFERRAL_INFO(stats);
-            message += `\n<code>${refLink}</code>\n\n`;
-            message += `📊 Статистика:\n`;
-            message += `👥 Приглашено: ${stats.expertReferrals || 0}\n`;
-            message += `💰 Заработано: ${(stats.totalCashback || 0).toFixed(2)}₽`;
-            
-            await ctx.editMessageText(
-                message,
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '📥 Пригласить друга', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}` }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    },
-                    parse_mode: 'HTML'
-                }
-            );
-        } else {
-            // Для обычных пользователей
-            const refLink = `https://t.me/${botName}?start=ref_${userId}`;
-            
-            let message = MESSAGES.REFERRAL_INFO;
-            message += `\n<code>${refLink}</code>`;
-            
-            await ctx.editMessageText(
-                message,
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '📥 Пригласить друга', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}` }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    },
-                    parse_mode: 'HTML'
-                }
-            );
+        let message = `💼 <b>Реферальная программа</b>\n\n`;
+        message += `Получай <b>25%</b> с 1-й линии и <b>10%</b> со 2-й линии с каждой оплаты приглашённых пользователей!\n\n`;
+        message += `🔗 Твоя персональная ссылка:\n<code>${refLink}</code>\n\n`;
+        message += `📊 <b>Статистика:</b>\n`;
+        message += `👥 Приглашено: ${stats?.expertReferrals || stats?.referredUsers || 0}\n`;
+        const rawCashback = user?.totalCashback ?? stats?.totalCashback ?? user?.affiliate_earnings ?? 0;
+        message += `💰 Заработано: ${Number(rawCashback || 0).toFixed(2)} USDT`;
+        
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '📥 Пригласить друга', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}` }],
+                [{ text: '🔙 Назад в профиль', callback_data: 'profile' }]
+            ]
+        };
+
+        try {
+            await ctx.editMessageText(message, {
+                reply_markup: keyboard,
+                parse_mode: 'HTML'
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                reply_markup: keyboard,
+                parse_mode: 'HTML'
+            });
         }
     } catch (err) {
         console.error('❌ Error in handleReferral:', err);
@@ -712,7 +677,7 @@ export async function handleProfile(ctx) {
         }
         
         const message = MESSAGES.PROFILE(user, generations, referralStats);
-        const keyboard = createProfileKeyboard(user);
+        const keyboard = createProfileKeyboard(user, referralStats);
         
         try {
             await ctx.editMessageText(message, {
@@ -806,3 +771,5 @@ export async function handleProfileHistory(ctx) {
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 }
+
+export { handleWithdraw } from '../handlers/user_handlers/user_menu.js';

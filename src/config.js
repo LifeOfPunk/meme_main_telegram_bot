@@ -45,6 +45,11 @@ export const PACKAGES = {
 
 
 
+// Стоимость генерации видео (TASK-09 & TASK-15)
+export const BASE_COST = 0.42;
+export const MULTIPLIER = 2.0;
+export const GENERATION_COST_USDT = Number((BASE_COST * MULTIPLIER).toFixed(2)); // 0.84
+
 // Настройки бесплатной квоты
 export const FREE_QUOTA_PER_USER = parseInt(process.env.FREE_QUOTA_PER_USER || '1');
 
@@ -62,7 +67,7 @@ export const SUPPORTED_CRYPTO = [
     { id: 'TON', name: '💎 TON (Gram)', processing: 'TON', chainName: 'TON' },
     { id: 'USDT_BEP20', name: '⚡ USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
     { id: 'USDT_SOL', name: '🟣 USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' },
-    { id: 'BNB_BEP20', name: '🟡 BNB (BEP20)', processing: 'BNB (BEP20)', chainName: 'Binance Smart Chain' }
+    { id: 'BNB_BEP20', name: '🟡 BNB (BEP20)', processing: 'BNB', chainName: 'Binance Smart Chain' }
 ];
 
 // Для обратной совместимости
@@ -71,7 +76,7 @@ SUPPORTED_CRYPTO.USDT = [
     { name: '⚡ USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
     { name: '🟣 USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' }
 ];
-SUPPORTED_CRYPTO.BNB = [{ name: '🟡 BNB (BEP20)', processing: 'BNB (BEP20)', chainName: 'Binance Smart Chain' }];
+SUPPORTED_CRYPTO.BNB = [{ name: '🟡 BNB (BEP20)', processing: 'BNB', chainName: 'Binance Smart Chain' }];
 
 // Тексты сообщений
 export const MESSAGES = {
@@ -108,7 +113,9 @@ ViralApp — это платформа для создания вирусных 
     
     MEME_SOON: '⏳ Этот мем в разработке\n\nСкоро будет доступен!',
     
-    NO_QUOTA: '🎬 Чтобы сгенерировать видео, вам нужно их сначала купить, и после этого вы сможете уже генерировать новые видео.',
+    NO_BALANCE: '🎬 Для генерации видео необходимо пополнить баланс',
+    
+    NO_QUOTA: '🎬 Для генерации видео необходимо пополнить баланс',
     
     CHOOSE_PACKAGE: '💎 Выберите пакет генераций:\n\nВыберите подходящий пакет для создания видео:',
     
@@ -194,11 +201,12 @@ ${pkg.emoji} ${pkg.title}
 
     EMAIL_INVALID: 'Упс вы ввели не правильную почту! Введите правильно, чтобы мы могли отправить вам сообщение о оплате.',
     
-    PAYMENT_CARD_CONFIRM: (pkg) => `Сумма к оплате:
-
-${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
-
-Проводя оплату вы соглашаетесь с договором-оферта и политикой конфиденциальности`,
+    PAYMENT_CARD_CONFIRM: (pkg) => `💳 <b>Оплата банковской картой</b>\n\n` +
+        `📦 <b>Пакет:</b> ${pkg.emoji} ${pkg.title}\n` +
+        `💎 <b>Количество:</b> ${pkg.generations} видео\n` +
+        `💰 <b>Сумма к оплате:</b> <b>${pkg.rub}₽</b> ($${pkg.usdt})\n\n` +
+        `Проводя оплату, вы соглашаетесь с <a href="https://telegra.ph/Dogovor-oferta-11-04">Договором-офертой</a> и <a href="https://telegra.ph/Politika-konfidencialnosti-11-04">Политикой конфиденциальности</a>.\n\n` +
+        `👇 Нажмите кнопку «Оплатить картой» для перехода на защищенную страницу оплаты:`,
 
     PAYMENT_CRYPTO_SELECT: (pkg) => `💎 Оплата криптовалютой
 
@@ -242,10 +250,12 @@ ${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
         // Баланс генераций
         const availableFree = user.free_quota || 0;
         const availablePaid = user.paid_quota || 0;
+        const walletBalance = Number(user.wallet_balance_usdt || 0).toFixed(2);
         
         message += `📊 Баланс генераций:\n`;
         message += `🎁 Бесплатные генерации: ${availableFree}\n`;
-        message += `💎 Платные генерации: ${availablePaid}\n\n`;
+        message += `💎 Платные генерации: ${availablePaid}\n`;
+        message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
         
         // Добавляем реферальную статистику
         if (referralStats && (referralStats.referredUsers > 0 || referralStats.expertReferrals > 0)) {
@@ -275,6 +285,14 @@ export const MAIN_MENU_KEYBOARD = {
         [{ text: '👤 Личный кабинет', callback_data: 'profile' }],
         [{ text: '🎁 Приведи друга', callback_data: 'referral' }],
         [{ text: 'ℹ️ О проекте', callback_data: 'about' }]
+    ]
+};
+
+// Клавиатура при нулевом балансе и квотах (TASK-15)
+export const NO_BALANCE_KEYBOARD = {
+    inline_keyboard: [
+        [{ text: '💳 Пополнить баланс', callback_data: 'buy' }],
+        [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
     ]
 };
 

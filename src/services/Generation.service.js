@@ -21,7 +21,7 @@ export class GenerationService {
         this.apiKey = process.env.KIE_AI_API_KEY;
         // Video generation API endpoint
         this.apiUrl = `https://api.kie.ai/api/v1/jobs`;
-        this.modelName = process.env.KIE_MODEL || 'grok-imagine/text-to-video';
+        this.modelName = process.env.KIE_MODEL || 'google/gemini-omni-flash-1-1';
         this.bot = bot; // Telegram bot instance для отправки уведомлений
         this.userService = new UserService(); // Сервис для работы с квотами
         this.youtubeService = new YouTubeService(); // Сервис для загрузки на YouTube
@@ -69,7 +69,7 @@ export class GenerationService {
     }
 
     // Создание генерации
-    async createGeneration({ userId, memeId, name, gender, customPrompt = null, chatId = null }) {
+    async createGeneration({ userId, memeId, name, gender, customPrompt = null, chatId = null, deductedType = null }) {
         try {
             const generationId = this.generateId();
             let prompt;
@@ -117,6 +117,7 @@ export class GenerationService {
                 name,
                 gender,
                 prompt,
+                deductedType: deductedType || null,
                 status: 'queued',
                 videoUrl: null,
                 error: null,
@@ -311,7 +312,7 @@ export class GenerationService {
                 console.log('Prompt:', promptData);
             }
 
-            // Подготовка input для Kie.ai в зависимости от модели
+            // Подготовка input для Kie.ai в зависимости от модели (TASK-09 & TASK-15)
             let inputPayload;
             if (this.modelName.includes('grok')) {
                 inputPayload = {
@@ -324,9 +325,9 @@ export class GenerationService {
             } else {
                 inputPayload = {
                     prompt: promptData,
-                    aspect_ratio: 'portrait', // 9:16 формат (1080x1920)
-                    n_frames: "10", 
-                    remove_watermark: true
+                    duration: "6",
+                    resolution: "720p",
+                    aspect_ratio: "9:16"
                 };
             }
 
@@ -334,7 +335,7 @@ export class GenerationService {
             const response = await axios.post(
                 `${this.apiUrl}/createTask`,
                 {
-                    model: this.modelName,
+                    model: this.modelName || 'google/gemini-omni-flash-1-1',
                     input: inputPayload
                 },
                 {
@@ -629,9 +630,13 @@ export class GenerationService {
                 // Получаем генерацию для возврата квоты
                 const generation = await this.getGeneration(data.generationId);
                 if (generation && generation.userId) {
-                    // Возвращаем квоту пользователю
-                    await this.userService.refundQuota(generation.userId);
-                    console.log(`💰 Refunded quota for user ${generation.userId}`);
+                    // Возвращаем квоту или баланс пользователю
+                    if (generation.deductedType) {
+                        await this.userService.refundGenerationCost(generation.userId, generation.deductedType);
+                    } else {
+                        await this.userService.refundQuota(generation.userId, generation.mode === 'paid');
+                    }
+                    console.log(`💰 Refunded quota/balance for user ${generation.userId}`);
                 }
                 
                 // Импортируем сообщение из конфига

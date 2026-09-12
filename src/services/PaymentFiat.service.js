@@ -124,8 +124,12 @@ export class PaymentFiatService {
             };
 
             console.log('💾 Saving order to database...');
-            await orderService.createOrder(orderData);
-            console.log(`✅ Order saved successfully: ${orderId}`);
+            try {
+                await orderService.createOrder(orderData);
+                console.log(`✅ Order saved successfully: ${orderId}`);
+            } catch (redisErr) {
+                console.warn('⚠️ Could not save order to Redis (offline mode):', redisErr.message);
+            }
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             console.log(`💵 Fiat payment created successfully: ${orderId}`);
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

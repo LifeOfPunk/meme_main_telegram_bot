@@ -1,5 +1,5 @@
 import redis from '../redis.js';
-import { FREE_QUOTA_PER_USER } from '../config.js';
+import { FREE_QUOTA_PER_USER, GENERATION_COST_USDT } from '../config.js';
 import { REDIS_KEYS } from '../config/redisKeys.js';
 
 export class UserService {
@@ -24,6 +24,7 @@ export class UserService {
                 failed_generations: 0,
                 total_spent: 0,
                 remaining_balance: 0,
+                wallet_balance_usdt: 0,
                 referralSource: refSource || null,
                 source: utmSource || null,
                 referredUsers: [],
@@ -64,11 +65,12 @@ export class UserService {
         return updatedUser;
     }
 
-    // Проверка наличия квот
+    // Проверка наличия квот или баланса (TASK-15)
     async hasQuota(userId) {
         const user = await this.getUser(userId);
         if (!user) return false;
-        return user.free_quota > 0 || user.paid_quota > 0;
+        const balance = Number(user.wallet_balance_usdt || 0);
+        return (user.free_quota || 0) > 0 || (user.paid_quota || 0) > 0 || balance >= GENERATION_COST_USDT;
     }
 
     // Списание бесплатной квоты
@@ -101,21 +103,112 @@ export class UserService {
         return true;
     }
 
+    // Списание с баланса кошелька в USDT (TASK-15)
+    async deductWalletBalance(userId, amount = GENERATION_COST_USDT) {
+        const user = await this.getUser(userId);
+        if (!user) return false;
+        const balance = Number(user.wallet_balance_usdt || 0);
+        if (balance < amount) return false;
+
+        const newBalance = Number((balance - amount).toFixed(2));
+        const newTotalSpent = Number(((user.total_spent || 0) + amount).toFixed(2));
+        await this.updateUser(userId, {
+            wallet_balance_usdt: newBalance,
+            total_spent: newTotalSpent
+        });
+        console.log(`⚖️ User ${userId}: deducted ${amount} USDT from wallet. Remaining: ${newBalance} USDT`);
+        return true;
+    }
+
+    // Пополнение баланса кошелька в USDT (TASK-15)
+    async addWalletBalance(userId, amount) {
+        const user = await this.getUser(userId);
+        if (!user) return false;
+
+        const currentBalance = Number(user.wallet_balance_usdt || 0);
+        const newBalance = Number((currentBalance + Number(amount)).toFixed(2));
+        await this.updateUser(userId, { wallet_balance_usdt: newBalance });
+        console.log(`💰 User ${userId}: added ${amount} USDT to wallet. Total: ${newBalance} USDT`);
+        return true;
+    }
+
+    // Роутер списания за генерацию видео (TASK-15)
+    // 1. Если free_quota > 0 -> расходовать бесплатную квоту.
+    // 2. Если paid_quota > 0 или wallet_balance_usdt >= 0.84 -> расходовать платную квоту / баланс.
+    // 3. Если баланс и квоты нулевые -> отказ (insufficient_funds).
+    async deductGenerationCost(userId) {
+        const user = await this.getUser(userId);
+        if (!user) return { success: false, reason: 'user_not_found' };
+
+        // 1. Если free_quota > 0 -> расходовать бесплатную квоту
+        if ((user.free_quota || 0) > 0) {
+            const deducted = await this.deductFreeQuota(userId);
+            return { success: deducted, type: 'free' };
+        }
+
+        // 2. Если paid_quota > 0 -> расходовать платную квоту
+        if ((user.paid_quota || 0) > 0) {
+            const deducted = await this.deductPaidQuota(userId);
+            return { success: deducted, type: 'paid' };
+        }
+
+        // 3. Если wallet_balance_usdt >= GENERATION_COST_USDT -> расходовать баланс
+        const currentBalance = Number(user.wallet_balance_usdt || 0);
+        if (currentBalance >= GENERATION_COST_USDT) {
+            const deducted = await this.deductWalletBalance(userId, GENERATION_COST_USDT);
+            return { success: deducted, type: 'balance', amount: GENERATION_COST_USDT };
+        }
+
+        // 4. Баланс и квоты нулевые
+        return { success: false, reason: 'insufficient_funds' };
+    }
+
+    // Возврат средств / квоты за неудачную генерацию (TASK-15)
+    async refundGenerationCost(userId, type = 'free') {
+        const user = await this.getUser(userId);
+        if (!user) return false;
+
+        if (type === 'balance') {
+            await this.addWalletBalance(userId, GENERATION_COST_USDT);
+            if ((user.total_spent || 0) >= GENERATION_COST_USDT) {
+                await this.updateUser(userId, {
+                    total_spent: Number(((user.total_spent || 0) - GENERATION_COST_USDT).toFixed(2))
+                });
+            }
+            console.log(`↩️ User ${userId}: refunded ${GENERATION_COST_USDT} USDT to wallet balance`);
+            return true;
+        } else if (type === 'paid') {
+            return await this.refundQuota(userId, true);
+        } else {
+            return await this.refundQuota(userId, false);
+        }
+    }
+
     // Списание квоты (с поддержкой режима: 'free', 'paid', 'any')
     async deductQuota(userId, mode = 'any') {
         if (mode === 'free') return await this.deductFreeQuota(userId);
-        if (mode === 'paid') return await this.deductPaidQuota(userId);
+        if (mode === 'paid') {
+            const user = await this.getUser(userId);
+            if ((user?.paid_quota || 0) > 0) {
+                return await this.deductPaidQuota(userId);
+            }
+            return await this.deductWalletBalance(userId, GENERATION_COST_USDT);
+        }
 
-        if (await this.deductFreeQuota(userId)) return true;
-        return await this.deductPaidQuota(userId);
+        const res = await this.deductGenerationCost(userId);
+        return res.success;
     }
 
-    // Возврат квоты при ошибке
+    // Возврат квоты при ошибке (с обратной совместимостью)
     async refundQuota(userId, isPaid = false) {
         const user = await this.getUser(userId);
         if (!user) return false;
 
-        if (isPaid) {
+        if (isPaid === 'balance') {
+            return await this.refundGenerationCost(userId, 'balance');
+        }
+
+        if (isPaid === true || isPaid === 'paid') {
             user.paid_quota += 1;
             await this.updateUser(userId, { paid_quota: user.paid_quota });
         } else {

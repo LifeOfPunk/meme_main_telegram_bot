@@ -72,15 +72,19 @@ export function createChainKeyboard(crypto, chains, packageKey = 'single') {
     return { inline_keyboard: buttons };
 }
 
-// Генерация клавиатуры для оплаты криптой
-export function createPaymentCryptoKeyboard(orderId, packageKey = 'single', paymentUrl = null) {
+// Генерация клавиатуры для оплаты криптой (TASK-02-03, TASK-15)
+export function createPaymentCryptoKeyboard(orderId, packageKey = 'deposit', address = null, paymentUrl = null) {
     const buttons = [];
     
-    if (paymentUrl) {
-        buttons.push([{ text: '🌐 Страница оплаты (QR / Ссылка)', url: paymentUrl }]);
+    if (address) {
+        buttons.push([{ text: '📋 Скопировать адрес', copy_text: { text: address } }]);
     }
-    buttons.push([{ text: '🔄 Проверить оплату', callback_data: `check_payment_${orderId}` }]);
-    buttons.push([{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]);
+    if (paymentUrl && typeof paymentUrl === 'string' && paymentUrl.startsWith('http') && !paymentUrl.includes('404')) {
+        buttons.push([{ text: '🌐 Страница оплаты', url: paymentUrl }]);
+    }
+    buttons.push([{ text: '✅ Проверить оплату', callback_data: `check_payment_${orderId}` }]);
+    const backCallback = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'buy';
+    buttons.push([{ text: '🔙 Назад', callback_data: backCallback }]);
     
     return {
         inline_keyboard: buttons
@@ -114,17 +118,10 @@ export async function createMainMenuKeyboard(userId) {
     }
 
     // Кнопка 2: "🎬 Сгенерировать видео" (всегда присутствует)
-    if (paidQuota > 0) {
-        buttons.push([{
-            text: '🎬 Сгенерировать видео',
-            callback_data: 'create_video_paid'
-        }]);
-    } else {
-        buttons.push([{
-            text: '🎬 Сгенерировать видео',
-            callback_data: 'buy'
-        }]);
-    }
+    buttons.push([{
+        text: '🎬 Сгенерировать видео',
+        callback_data: 'create_video'
+    }]);
     
     // Кнопки личного кабинета и подарка за подписку на соцсети
     buttons.push(
@@ -135,28 +132,50 @@ export async function createMainMenuKeyboard(userId) {
     return { inline_keyboard: buttons };
 }
 
-// Генерация клавиатуры личного кабинета (TASK-07)
-export function createProfileKeyboard(user) {
-    const freeQuota = user?.free_quota || 0;
+// Генерация клавиатуры личного кабинета (TASK-07, TASK-15)
+export function createProfileKeyboard(user, referralStats = null) {
+    const totalCashback = Number(user?.totalCashback ?? referralStats?.totalCashback ?? user?.affiliate_earnings ?? 0);
     const buttons = [];
     
-    // Кнопка «🎁 Бесплатная генерация» (если free > 0)
-    if (freeQuota > 0) {
-        buttons.push([{
-            text: '🎁 Бесплатная генерация',
-            callback_data: 'create_video_free'
-        }]);
-    }
-    
-    // «💳 Купить видео», «📜 История генераций», «🔙 Главное меню»
+    // 1. [💳 Пополнить баланс] -> переход к выбору способа оплаты
     buttons.push([{
-        text: '💳 Купить видео',
+        text: '💳 Пополнить баланс',
         callback_data: 'buy'
     }]);
+
+    // 2. [💸 Вывести средства] -> ПОКАЗЫВАТЬ ТОЛЬКО ЕСЛИ у пользователя есть заработанный кешбэк (totalCashback > 0)
+    if (totalCashback > 0) {
+        buttons.push([{
+            text: '💸 Вывести средства',
+            callback_data: 'withdraw'
+        }]);
+    }
+
+    // 3. [🎁 Реферальная программа] -> информация о 2 линиях (25% и 10%) и персональная ссылка
+    buttons.push([{
+        text: '🎁 Реферальная программа',
+        callback_data: 'referral'
+    }]);
+
+    // 4. [📜 История генераций]
     buttons.push([{
         text: '📜 История генераций',
         callback_data: 'profile_history'
     }]);
+
+    // 5. [💬 Поддержка] -> https://t.me/aiviral_main
+    buttons.push([{
+        text: '💬 Поддержка',
+        url: 'https://t.me/aiviral_main'
+    }]);
+
+    // 6. [ℹ️ О проекте] -> открывает экран о проекте
+    buttons.push([{
+        text: 'ℹ️ О проекте',
+        callback_data: 'about'
+    }]);
+
+    // 7. [🔙 Главное меню]
     buttons.push([{
         text: '🔙 Главное меню',
         callback_data: 'main_menu'
