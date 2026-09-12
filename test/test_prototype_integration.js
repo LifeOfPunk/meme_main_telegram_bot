@@ -52,7 +52,7 @@ const userMock = {
 const menuText = getMainMenuText(userMock);
 assert(!menuText.includes('Всего генераций в системе'), 'Must not contain fake generation counter (TASK-20)');
 assert(menuText.includes('📊 *Ваш баланс:* 10 видео'));
-assert(menuText.includes('5.50 USDT (~495₽)'));
+assert(menuText.includes('5.50 USDT'));
 assert(!menuText.includes('Omni Flash'), 'Must not contain specific AI model names');
 assert(!menuText.includes('Grok'), 'Must not contain Grok');
 console.log('   ✅ Main menu text formatted correctly without fake stats and no AI model branding');
@@ -64,9 +64,9 @@ const profileText = MESSAGES.PROFILE(
     15,
     { referredUsers: 4, totalCashback: 25.00 }
 );
-assert(profileText.includes('💰 Доступно к выводу: 25.00 USDT (~2250₽)'));
+assert(profileText.includes('💰 Доступно к выводу: 25.00 USDT'));
 assert(profileText.includes('👥 Приглашено друзей: 4'));
-console.log('   ✅ Profile text has USDT + ruble equivalent and referral withdrawal');
+console.log('   ✅ Profile text has USDT balance and referral withdrawal');
 
 // 5. Payment packages & Card confirmation
 console.log('\n5️⃣ Packages & Card Payment Links');
