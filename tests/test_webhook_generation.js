@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { GenerationService } from './src/services/Generation.service.js';
+import { GenerationService } from '../src/services/Generation.service.js';
 import { Telegraf } from 'telegraf';
 
 console.log('🧪 Testing Webhook-based Video Generation...\n');

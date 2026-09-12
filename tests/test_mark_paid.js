@@ -28,8 +28,8 @@ try {
     console.warn('⚠️ Could not load .env file:', err.message);
 }
 
-import { OrderService } from './src/services/Order.service.js';
-import { UserService } from './src/services/User.service.js';
+import { OrderService } from '../src/services/Order.service.js';
+import { UserService } from '../src/services/User.service.js';
 
 const orderId = process.argv[2];
 

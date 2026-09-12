@@ -102,32 +102,51 @@ export function createAfterPaymentKeyboard() {
 }
 
 // Генерация динамической клавиатуры главного меню
-export async function createMainMenuKeyboard(userId) {
-    const user = await userService.getUser(userId);
-    const freeQuota = user?.free_quota || 0;
-    const paidQuota = user?.paid_quota || 0;
+export async function createMainMenuKeyboard(userIdOrUser) {
+    let freeQuota = 0;
+    if (typeof userIdOrUser === 'object' && userIdOrUser !== null) {
+        freeQuota = userIdOrUser.free_quota || 0;
+    } else if (typeof userIdOrUser === 'number' && userIdOrUser <= 100 && !Number.isInteger(userIdOrUser / 10000)) {
+        // If passed direct quota count
+        freeQuota = userIdOrUser;
+    } else if (userIdOrUser) {
+        const user = await userService.getUser(userIdOrUser);
+        freeQuota = user?.free_quota || 0;
+    }
     
     const buttons = [];
     
-    // Кнопка 1: "🎁 Бесплатная генерация" (только если есть бесплатные генерации)
+    // Кнопка 1: "🎬 Создать видео" (всегда вверху)
+    buttons.push([{
+        text: '🎬 Создать видео',
+        callback_data: 'create_video'
+    }]);
+
+    // Кнопка 2: "🎁 Бесплатная генерация" (только если есть бесплатные генерации)
     if (freeQuota > 0) {
         buttons.push([{
             text: '🎁 Бесплатная генерация',
             callback_data: 'create_video_free'
         }]);
     }
-
-    // Кнопка 2: "🎬 Сгенерировать видео" (всегда присутствует)
-    buttons.push([{
-        text: '🎬 Сгенерировать видео',
-        callback_data: 'create_video'
-    }]);
     
-    // Кнопки личного кабинета и подарка за подписку на соцсети
-    buttons.push(
-        [{ text: '👤 Личный кабинет', callback_data: 'profile' }],
-        [{ text: '🎁 Подписывайся за подарок!', callback_data: 'social_gift' }]
-    );
+    // Кнопка 3: "💳 Пополнить баланс" (целевое действие пополнения)
+    buttons.push([{
+        text: '💳 Пополнить баланс',
+        callback_data: 'buy'
+    }]);
+
+    // Кнопка 4: "👤 Личный кабинет"
+    buttons.push([{
+        text: '👤 Личный кабинет',
+        callback_data: 'profile'
+    }]);
+
+    // Кнопка 5: "❓ Инструкция"
+    buttons.push([{
+        text: '❓ Инструкция',
+        url: 'https://aiviral.agency/kak-pisat-promty/'
+    }]);
     
     return { inline_keyboard: buttons };
 }
@@ -136,14 +155,8 @@ export async function createMainMenuKeyboard(userId) {
 export function createProfileKeyboard(user, referralStats = null) {
     const totalCashback = Number(user?.totalCashback ?? referralStats?.totalCashback ?? user?.affiliate_earnings ?? 0);
     const buttons = [];
-    
-    // 1. [💳 Пополнить баланс] -> переход к выбору способа оплаты
-    buttons.push([{
-        text: '💳 Пополнить баланс',
-        callback_data: 'buy'
-    }]);
 
-    // 2. [💸 Вывести средства] -> ПОКАЗЫВАТЬ ТОЛЬКО ЕСЛИ у пользователя есть заработанный кешбэк (totalCashback > 0)
+    // 1. [💸 Вывести средства] -> ПОКАЗЫВАТЬ ТОЛЬКО ЕСЛИ у пользователя есть заработанный кешбэк (totalCashback > 0)
     if (totalCashback > 0) {
         buttons.push([{
             text: '💸 Вывести средства',
@@ -151,9 +164,9 @@ export function createProfileKeyboard(user, referralStats = null) {
         }]);
     }
 
-    // 3. [🎁 Реферальная программа] -> информация о 2 линиях (25% и 10%) и персональная ссылка
+    // 2. [🤝 Реферальная программа]
     buttons.push([{
-        text: '🎁 Реферальная программа',
+        text: '🤝 Реферальная программа',
         callback_data: 'referral'
     }]);
 

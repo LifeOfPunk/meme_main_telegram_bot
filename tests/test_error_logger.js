@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { errorLogger } from './src/services/ErrorLogger.service.js';
+import { errorLogger } from '../src/services/ErrorLogger.service.js';
 
 console.log('🧪 Testing Error Logger System...\n');
 

@@ -117,13 +117,16 @@ export const MESSAGES = {
         message += `🆔 ID: ${user.userId}\n`;
         message += `📝 Имя: ${user.firstName || 'не указано'}\n\n`;
         
-        // Баланс генераций
+        // Баланс генераций (суммируем бесплатные и платные)
         const availableFree = user.free_quota || 0;
         const availablePaid = user.paid_quota || 0;
+        const totalGenerations = availableFree + availablePaid;
+        const walletBalance = Number(user.wallet_balance_usdt || 0).toFixed(2);
         
-        message += `📊 Баланс генераций:\n`;
+        message += `📊 Баланс генераций: ${totalGenerations} видео\n`;
         message += `🎁 Бесплатные генерации: ${availableFree}\n`;
-        message += `💎 Платные генерации: ${availablePaid}\n\n`;
+        message += `💎 Платные генерации: ${availablePaid}\n`;
+        message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
         
         // Добавляем реферальную статистику
         if (referralStats) {

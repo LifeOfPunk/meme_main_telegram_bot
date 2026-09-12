@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fs from 'fs';
 import { Telegraf, Scenes, session, Markup } from 'telegraf';
 import { UserService } from './services/User.service.js';
 import { OrderService } from './services/Order.service.js';
@@ -8,7 +9,7 @@ import { GenerationService } from './services/Generation.service.js';
 import { ReferralService } from './services/Referral.service.js';
 import { SubscriptionService } from './services/Subscription.service.js';
 import { errorLogger } from './services/ErrorLogger.service.js';
-import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_BONUS, EXPERT_CASHBACK_PERCENT, BACK_TO_MENU, GENDER_CHOICE, CONFIRM_GENERATION, GENERATION_COST_USDT, NO_BALANCE_KEYBOARD } from './config.js';
+import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_BONUS, EXPERT_CASHBACK_PERCENT, BACK_TO_MENU, GENDER_CHOICE, CONFIRM_GENERATION, GENERATION_COST_USDT, NO_BALANCE_KEYBOARD, getMainMenuText } from './config.js';
 import { 
     createCatalogKeyboard, 
     createCryptoKeyboard, 
@@ -195,11 +196,17 @@ bot.start(async (ctx) => {
                 const success = await referralService.processExpertReferral(expertId, userId);
                 
                 if (success) {
+                    // Уведомляем нового пользователя о бонусе
+                    await ctx.reply(
+                        `🎉 Добро пожаловать!\n\nВы получили +${REFERRAL_BONUS} бесплатную генерацию за переход по реферальной ссылке!`
+                    );
+                    showWelcome = false;
+
                     // Уведомляем эксперта
                     try {
                         await bot.telegram.sendMessage(
                             expertId,
-                            `💼 По вашей экспертной ссылке зарегистрировался новый пользователь!\n\n💰 Вы будете получать ${EXPERT_CASHBACK_PERCENT}% с каждой его оплаты!`
+                            `💼 По вашей партнерской ссылке зарегистрировался новый пользователь!\n\n+${REFERRAL_BONUS} бесплатная генерация добавлена на ваш баланс!\n💰 Вы будете получать ${EXPERT_CASHBACK_PERCENT}% с каждой его оплаты!`
                         );
                     } catch (notifyErr) {
                         console.log(`Failed to notify expert ${expertId}:`, notifyErr.message);
@@ -237,9 +244,12 @@ bot.start(async (ctx) => {
                 });
             }
         } else {
-            // Для существующих пользователей всегда показываем главное меню
-            const mainMenu = await createMainMenuKeyboard(userId);
-            await ctx.reply(MESSAGES.MAIN_MENU, { 
+            // Для существующих пользователей всегда показываем главное меню с балансом
+            const user = existingUser || await userService.getUser(userId);
+            const mainMenu = await createMainMenuKeyboard(user || userId);
+            const menuText = getMainMenuText(user);
+            await ctx.reply(menuText, { 
+                parse_mode: 'Markdown',
                 reply_markup: mainMenu
             });
         }
@@ -292,13 +302,17 @@ bot.action('main_menu', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
         const mainMenu = await createMainMenuKeyboard(userId);
-        await ctx.editMessageText(MESSAGES.MAIN_MENU, { reply_markup: mainMenu });
+        const menuText = getMainMenuText(user);
+        await ctx.editMessageText(menuText, { parse_mode: 'Markdown', reply_markup: mainMenu });
     } catch (err) {
         await safeAnswerCbQuery(ctx);
         const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
         const mainMenu = await createMainMenuKeyboard(userId);
-        await ctx.reply(MESSAGES.MAIN_MENU, { reply_markup: mainMenu });
+        const menuText = getMainMenuText(user);
+        await ctx.reply(menuText, { parse_mode: 'Markdown', reply_markup: mainMenu });
     }
 });
 
@@ -841,61 +855,47 @@ bot.action(/meme_(.+)/, async (ctx) => {
         ctx.session = ctx.session || {};
         ctx.session.selectedMeme = memeId;
         
-        // Отправляем медиа-группу и текст с кнопкой
-        if (memeId === 'mama_taxi' || memeId === 'mama_call') {
-            try {
-                // Отправляем медиа-группу (видео + фото с описанием)
-                await ctx.replyWithMediaGroup([
-                    {
+        // Отправляем медиа-группу и текст с кнопкой динамически из конфигурации шаблона
+        try {
+            const mediaItems = [];
+            if (meme && meme.media) {
+                if (meme.media.video && fs.existsSync(meme.media.video)) {
+                    mediaItems.push({
                         type: 'video',
-                        media: { source: './media/mother.MP4' }
-                    },
-                    {
+                        media: { source: meme.media.video }
+                    });
+                }
+                if (meme.media.statistic && fs.existsSync(meme.media.statistic)) {
+                    mediaItems.push({
                         type: 'photo',
-                        media: { source: './media/statistic.jpeg' },
-                        caption: `*${meme.name}*`,
+                        media: { source: meme.media.statistic },
+                        caption: meme.media.views_badge ? `*${meme.name}*\n${meme.media.views_badge}` : `*${meme.name}*`,
                         parse_mode: 'Markdown'
-                    }
-                ]);
-                
-                // Отправляем призыв с кнопкой
-                await ctx.reply(MESSAGES.ENTER_NAME, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                        ]
-                    }
-                });
-            } catch (mediaErr) {
-                console.log('⚠️ Failed to send media files:', mediaErr.message);
+                    });
+                }
             }
-        } else if (memeId === '228') {
-            try {
-                // Отправляем медиа-группу (видео + фото с описанием)
-                await ctx.replyWithMediaGroup([
-                    {
-                        type: 'video',
-                        media: { source: './media/mopsvideo.mp4' }
-                    },
-                    {
-                        type: 'photo',
-                        media: { source: './media/mops.jpeg' },
-                        caption: `*${meme.name}*`,
-                        parse_mode: 'Markdown'
-                    }
-                ]);
-                
-                // Отправляем призыв с кнопкой
-                await ctx.reply(MESSAGES.ENTER_NAME, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                        ]
-                    }
-                });
-            } catch (mediaErr) {
-                console.log('⚠️ Failed to send media files:', mediaErr.message);
+            
+            if (mediaItems.length > 0) {
+                await ctx.replyWithMediaGroup(mediaItems);
             }
+            
+            // Отправляем призыв с кнопкой
+            await ctx.reply(MESSAGES.ENTER_NAME, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                    ]
+                }
+            });
+        } catch (mediaErr) {
+            console.log('⚠️ Failed to send media files:', mediaErr.message);
+            await ctx.reply(MESSAGES.ENTER_NAME, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                    ]
+                }
+            });
         }
         
         // Устанавливаем флаг ожидания ввода имени
@@ -1179,8 +1179,8 @@ bot.on('text', async (ctx) => {
                     reply_markup: {
                         inline_keyboard: [
                             [{ text: '💳 Оплатить картой', url: paymentUrl }],
-                            [{ text: '📝 Договор-оферта', url: 'https://telegra.ph/Dogovor-oferta-11-04' }],
-                            [{ text: '📝 Политика конфиденциальности', url: 'https://telegra.ph/Politika-konfidencialnosti-11-04' }],
+                            [{ text: '📝 Договор-оферта', url: 'https://aiviral.agency/dogovor-oferta/' }],
+                            [{ text: '📝 Политика конфиденциальности', url: 'https://aiviral.agency/politika-konfidencialnosti/' }],
                             [{ text: '❓ Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'aiviral_manager'}` }],
                             [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
                         ]
@@ -1610,6 +1610,9 @@ bot.action('ref_user', (ctx) => paymentController.handleRefUser(ctx));
 bot.action('ref_expert', (ctx) => paymentController.handleRefExpert(ctx));
 
 // Обработка оплаты
+bot.action('pay_card_packages', (ctx) => {
+    paymentController.handlePayCardPackages(ctx);
+});
 bot.action('pay_crypto_deposit', (ctx) => {
     paymentController.handlePayCrypto(ctx, 'deposit');
 });

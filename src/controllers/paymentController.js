@@ -36,23 +36,13 @@ export async function handleBuy(ctx) {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
-        // Создаём кнопки для всех пакетов
-        const packageButtons = Object.keys(PACKAGES).map(key => {
-            const pkg = PACKAGES[key];
-            const discount = pkg.discount ? ` 🔥 -${pkg.discount}` : '';
-            return [{
-                text: `${pkg.emoji} ${pkg.title} - ${pkg.rub}₽${discount}`,
-                callback_data: `select_package_${key}`
-            }];
-        });
-        
-        const buyText = `🎬 Чтобы сгенерировать видео, вам нужно их сначала купить, и после этого вы сможете уже генерировать новые видео.\n\n💎 Выберите подходящий пакет:`;
+        const buyText = `Для генерации видео пополните баланс удобным способом:`;
         
         const keyboard = {
             inline_keyboard: [
-                ...packageButtons,
-                [{ text: '💎 Крипта (Пополнить баланс)', callback_data: 'pay_crypto_deposit' }],
-                [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+                [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
+                [{ text: '💎 Криптовалюта', callback_data: 'pay_crypto_deposit' }],
+                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
             ]
         };
         
@@ -67,6 +57,36 @@ export async function handleBuy(ctx) {
         }
     } catch (err) {
         console.error('❌ Error in handleBuy:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+}
+
+// Обработчик экрана пакетов для банковской карты (TASK-02-03, TASK-15)
+export async function handlePayCardPackages(ctx) {
+    try {
+        await safeAnswerCbQuery(ctx);
+        
+        const packageButtons = [
+            [{ text: '🎬 500₽ (10 видео)', callback_data: 'pay_card_pack_10' }],
+            [{ text: '📦 2250₽ (50 видео)', callback_data: 'pay_card_pack_50' }],
+            [{ text: '🎁 4250₽ (100 видео)', callback_data: 'pay_card_pack_100' }],
+            [{ text: '💎 20 000₽ (500 видео)', callback_data: 'pay_card_pack_500' }],
+            [{ text: '🔙 Назад к способам оплаты', callback_data: 'create_video' }]
+        ];
+
+        const message = 'Выберите пакет для оплаты картой:';
+        
+        try {
+            await ctx.editMessageText(message, {
+                reply_markup: { inline_keyboard: packageButtons }
+            });
+        } catch {
+            await ctx.reply(message, {
+                reply_markup: { inline_keyboard: packageButtons }
+            });
+        }
+    } catch (err) {
+        console.error('❌ Error in handlePayCardPackages:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 }
@@ -193,8 +213,12 @@ export async function handlePayCard(ctx, packageKey = 'pack_10') {
         const keyboard = {
             inline_keyboard: [
                 [{ text: '💳 Оплатить картой', url: paymentUrl }],
+                [
+                    { text: '📝 Оферта', url: 'https://aiviral.agency/dogovor-oferta/' },
+                    { text: '🔒 Политика', url: 'https://aiviral.agency/politika-konfidencialnosti/' }
+                ],
                 [{ text: '❓ Обратная связь', url: 'https://t.me/aiviral_main' }],
-                [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
+                [{ text: '🔙 Назад к пакетам', callback_data: 'pay_card_packages' }]
             ]
         };
         
@@ -595,10 +619,14 @@ export async function handleReferral(ctx) {
         const rawCashback = user?.totalCashback ?? stats?.totalCashback ?? user?.affiliate_earnings ?? 0;
         message += `💰 Заработано: ${Number(rawCashback || 0).toFixed(2)} USDT`;
         
+        const inviteText = 'Привет! Я генерирую вирусные ролики в ViralApp. Присоединяйся по моей ссылке, получишь бесплатную генерацию:';
+        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent(inviteText)}`;
+        
         const keyboard = {
             inline_keyboard: [
-                [{ text: '📥 Пригласить друга', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}` }],
-                [{ text: '🔙 Назад в профиль', callback_data: 'profile' }]
+                [{ text: '📥 Пригласить друга', url: shareUrl }],
+                [{ text: '🔙 В личный кабинет', callback_data: 'profile' }],
+                [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
             ]
         };
 

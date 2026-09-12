@@ -2,7 +2,15 @@
   "id": "228",
   "name": "🐶 Мопс доставка",
   "status": "active",
-  "preview": "",
+  "preview": "/proto-media/mops_frame.jpg",
+  "media": {
+    "video": "./media/mopsvideo.mp4",
+    "video_preview": "/proto-media/mops_frame.jpg",
+    "statistic": "./media/mops.jpeg",
+    "statistic_preview": "/proto-media/mops.jpeg",
+    "views_count": 850000,
+    "views_badge": "🔥 850,000+ просмотров"
+  },
   "prompt": {
     "scene": "Apartment entrance, urban setting",
     "duration": "8s",

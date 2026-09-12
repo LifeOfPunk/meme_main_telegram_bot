@@ -24,21 +24,19 @@ console.log('🧪 Запуск тестов Личного кабинета и �
     const hasWithdrawBtn = buttons.some(row => row.some(b => b.text.includes('Вывести средства')));
     assert.strictEqual(hasWithdrawBtn, false, 'Кнопка "Вывести средства" должна отсутствовать при 0 кешбэка');
 
-    // Проверка точного набора из 6 кнопок
-    assert.strictEqual(buttons.length, 6, 'Должно быть ровно 6 кнопок при totalCashback == 0');
-    assert.strictEqual(buttons[0][0].text, '💳 Пополнить баланс');
-    assert.strictEqual(buttons[0][0].callback_data, 'buy');
-    assert.strictEqual(buttons[1][0].text, '🎁 Реферальная программа');
-    assert.strictEqual(buttons[1][0].callback_data, 'referral');
-    assert.strictEqual(buttons[2][0].text, '📜 История генераций');
-    assert.strictEqual(buttons[2][0].callback_data, 'profile_history');
-    assert.strictEqual(buttons[3][0].text, '💬 Поддержка');
-    assert.strictEqual(buttons[3][0].url, 'https://t.me/aiviral_main');
-    assert.strictEqual(buttons[4][0].text, 'ℹ️ О проекте');
-    assert.strictEqual(buttons[4][0].callback_data, 'about');
-    assert.strictEqual(buttons[5][0].text, '🔙 Главное меню');
-    assert.strictEqual(buttons[5][0].callback_data, 'main_menu');
-    console.log('✅ Тест 1 пройден: Профиль без кешбэка (6 кнопок, без бесплатной генерации, без вывода)');
+    // Проверка точного набора из 5 кнопок (без "Пополнить баланс", он в Главном меню)
+    assert.strictEqual(buttons.length, 5, 'Должно быть ровно 5 кнопок при totalCashback == 0');
+    assert.strictEqual(buttons[0][0].text, '🤝 Реферальная программа');
+    assert.strictEqual(buttons[0][0].callback_data, 'referral');
+    assert.strictEqual(buttons[1][0].text, '📜 История генераций');
+    assert.strictEqual(buttons[1][0].callback_data, 'profile_history');
+    assert.strictEqual(buttons[2][0].text, '💬 Поддержка');
+    assert.strictEqual(buttons[2][0].url, 'https://t.me/aiviral_main');
+    assert.strictEqual(buttons[3][0].text, 'ℹ️ О проекте');
+    assert.strictEqual(buttons[3][0].callback_data, 'about');
+    assert.strictEqual(buttons[4][0].text, '🔙 Главное меню');
+    assert.strictEqual(buttons[4][0].callback_data, 'main_menu');
+    console.log('✅ Тест 1 пройден: Профиль без кешбэка (5 кнопок, без Пополнить баланс, без бесплатной генерации, без вывода)');
 }
 
 // Тест 2: Профиль пользователя С кешбэком > 0
@@ -54,22 +52,20 @@ console.log('🧪 Запуск тестов Личного кабинета и �
     const kb = createProfileKeyboard(userWithCashback);
     const buttons = kb.inline_keyboard;
 
-    assert.strictEqual(buttons.length, 7, 'Должно быть ровно 7 кнопок при totalCashback > 0');
-    assert.strictEqual(buttons[0][0].text, '💳 Пополнить баланс');
-    assert.strictEqual(buttons[0][0].callback_data, 'buy');
-    assert.strictEqual(buttons[1][0].text, '💸 Вывести средства');
-    assert.strictEqual(buttons[1][0].callback_data, 'withdraw');
-    assert.strictEqual(buttons[2][0].text, '🎁 Реферальная программа');
-    assert.strictEqual(buttons[2][0].callback_data, 'referral');
-    assert.strictEqual(buttons[3][0].text, '📜 История генераций');
-    assert.strictEqual(buttons[3][0].callback_data, 'profile_history');
-    assert.strictEqual(buttons[4][0].text, '💬 Поддержка');
-    assert.strictEqual(buttons[4][0].url, 'https://t.me/aiviral_main');
-    assert.strictEqual(buttons[5][0].text, 'ℹ️ О проекте');
-    assert.strictEqual(buttons[5][0].callback_data, 'about');
-    assert.strictEqual(buttons[6][0].text, '🔙 Главное меню');
-    assert.strictEqual(buttons[6][0].callback_data, 'main_menu');
-    console.log('✅ Тест 2 пройден: Профиль с кешбэком (7 кнопок в точном порядке, с кнопкой вывода)');
+    assert.strictEqual(buttons.length, 6, 'Должно быть ровно 6 кнопок при totalCashback > 0');
+    assert.strictEqual(buttons[0][0].text, '💸 Вывести средства');
+    assert.strictEqual(buttons[0][0].callback_data, 'withdraw');
+    assert.strictEqual(buttons[1][0].text, '🤝 Реферальная программа');
+    assert.strictEqual(buttons[1][0].callback_data, 'referral');
+    assert.strictEqual(buttons[2][0].text, '📜 История генераций');
+    assert.strictEqual(buttons[2][0].callback_data, 'profile_history');
+    assert.strictEqual(buttons[3][0].text, '💬 Поддержка');
+    assert.strictEqual(buttons[3][0].url, 'https://t.me/aiviral_main');
+    assert.strictEqual(buttons[4][0].text, 'ℹ️ О проекте');
+    assert.strictEqual(buttons[4][0].callback_data, 'about');
+    assert.strictEqual(buttons[5][0].text, '🔙 Главное меню');
+    assert.strictEqual(buttons[5][0].callback_data, 'main_menu');
+    console.log('✅ Тест 2 пройден: Профиль с кешбэком (6 кнопок в точном порядке, с кнопкой вывода)');
 }
 
 // Тест 3: Формирование ответа при выводе средств

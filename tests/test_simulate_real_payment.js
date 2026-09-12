@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import { OrderService } from './src/services/Order.service.js';
-import { UserService } from './src/services/User.service.js';
-import { PACKAGES } from './src/config.js';
+import { OrderService } from '../src/services/Order.service.js';
+import { UserService } from '../src/services/User.service.js';
+import { PACKAGES } from '../src/config.js';
 
 // Симуляция реальной оплаты для тестирования
 async function simulatePayment() {

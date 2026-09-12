@@ -7,8 +7,8 @@
  * - Проверку валидации
  */
 
-import { UserService } from './src/services/User.service.js';
-import redis from './src/redis.js';
+import { UserService } from '../src/services/User.service.js';
+import redis from '../src/redis.js';
 
 const userService = new UserService();
 

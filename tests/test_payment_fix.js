@@ -5,7 +5,7 @@
  */
 
 import 'dotenv/config';
-import { PaymentCryptoService } from './src/services/PaymentCrypto.service.js';
+import { PaymentCryptoService } from '../src/services/PaymentCrypto.service.js';
 
 const paymentService = new PaymentCryptoService();
 

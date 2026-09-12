@@ -2,7 +2,15 @@
   "id": "mama_taxi",
   "name": "🚕 Мама вызывай",
   "status": "active",
-  "preview": "",
+  "preview": "/proto-media/mother_frame.jpg",
+  "media": {
+    "video": "./media/mother.MP4",
+    "video_preview": "/proto-media/mother_frame.jpg",
+    "statistic": "./media/statistic.jpeg",
+    "statistic_preview": "/proto-media/statistic.jpeg",
+    "views_count": 1136642,
+    "views_badge": "🔥 1,136,642 просмотров"
+  },
   "prompt": {
     "scene": "Slavic city bus stop, traditional urban environment with Eastern European details",
     "duration": "8s",

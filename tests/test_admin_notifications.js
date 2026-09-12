@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';
-import { errorLogger } from './src/services/ErrorLogger.service.js';
-import { ADMINS } from './src/config.js';
+import { errorLogger } from '../src/services/ErrorLogger.service.js';
+import { ADMINS } from '../src/config.js';
 
 console.log('🧪 Testing Admin Notifications...\n');
 
