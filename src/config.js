@@ -45,10 +45,10 @@ export const PACKAGES = {
 
 
 
-// Стоимость генерации видео (Google Gemini Omni Flash 1.1: 10s = 126 кредитов = $0.63)
+// Стоимость генерации видео (Google Gemini Omni Flash 1.1: 10s = 126 кредитов = $0.63, розница 1.30 USDT)
 export const BASE_COST = 0.63;
 export const MULTIPLIER = 2.0;
-export const GENERATION_COST_USDT = Number((BASE_COST * MULTIPLIER).toFixed(2)); // 1.26 USDT
+export const GENERATION_COST_USDT = 1.30;
 
 // Настройки бесплатной квоты
 export const FREE_QUOTA_PER_USER = parseInt(process.env.FREE_QUOTA_PER_USER || '1');

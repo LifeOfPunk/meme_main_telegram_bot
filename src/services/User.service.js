@@ -134,7 +134,7 @@ export class UserService {
 
     // Роутер списания за генерацию видео (TASK-15)
     // 1. Если free_quota > 0 -> расходовать бесплатную квоту.
-    // 2. Если paid_quota > 0 или wallet_balance_usdt >= GENERATION_COST_USDT (1.26 USDT) -> расходовать платную квоту / баланс.
+    // 2. Если paid_quota > 0 или wallet_balance_usdt >= GENERATION_COST_USDT (1.30 USDT) -> расходовать платную квоту / баланс.
     // 3. Если баланс и квоты нулевые -> отказ (insufficient_funds).
     async deductGenerationCost(userId) {
         const user = await this.getUser(userId);
