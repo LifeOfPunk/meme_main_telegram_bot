@@ -1874,35 +1874,6 @@ if (USE_WEBHOOK) {
         });
 }
 
-// Авто-начисление баланса для тестирования Риком (ID: 7937165663, транзакция 17411933)
-(async () => {
-    try {
-        const TESTER_ID = 7937165663;
-        let user = await userService.getUser(TESTER_ID);
-        if (!user) {
-            user = await userService.createUser({
-                id: TESTER_ID,
-                first_name: 'Rick',
-                username: null
-            });
-        }
-        if (user) {
-            const balance = Number(user.wallet_balance_usdt || 0);
-            if (balance < 2.0) {
-                await userService.addWalletBalance(TESTER_ID, 2.0);
-                console.log(`✅ Bootstrap: credited 2.0 USDT wallet balance to tester ${TESTER_ID}`);
-            }
-            // Сбрасываем искусственную квоту, если была добавлена bootstrap'ом
-            if (user.paid_quota === 10) {
-                await userService.updateUser(TESTER_ID, { paid_quota: 0 });
-                console.log(`✅ Bootstrap: reset artificial paid_quota to 0 for tester ${TESTER_ID}`);
-            }
-        }
-    } catch (bootstrapErr) {
-        console.warn('⚠️ Bootstrap tester check:', bootstrapErr.message);
-    }
-})();
-
 // Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
