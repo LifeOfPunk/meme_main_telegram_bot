@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { OrderService } from '../services/Order.service.js';
 import { UserService } from '../services/User.service.js';
 import { ReferralService } from '../services/Referral.service.js';
+import { currencyService } from '../services/Currency.service.js';
 import { PACKAGES } from '../config.js';
 
 const app = express();
@@ -120,44 +121,47 @@ app.post('/webhook/lava', async (req, res) => {
             // Отмечаем заказ как оплаченный
             await orderService.markAsPaid(order.orderId);
 
-            // Проверяем что пакет существует
+            // Проверяем что пакет существует, либо депозит
             const pkg = PACKAGES[order.package];
-            if (!pkg) {
-                console.error(`❌ Package not found: ${order.package}`);
-                console.error(`Available packages: ${Object.keys(PACKAGES).join(', ')}`);
-                return res.status(400).json({ error: 'Package not found' });
+            let depositUsd = 0;
+
+            if (pkg) {
+                console.log(`💳 Adding ${pkg.generations} videos to user ${order.userId}`);
+                await userService.addPaidQuota(order.userId, pkg.generations);
+                console.log(`✅ Successfully added ${pkg.generations} videos to user ${order.userId}`);
+            } else {
+                const rubAmount = Number(order.amount || req.body.amount || req.body.buyer?.amount || 500);
+                const conversion = await currencyService.rubToUsdFloor(rubAmount);
+                depositUsd = conversion.usd;
+                console.log(`💰 Adding ${depositUsd} USDT (CBR rate: ${conversion.rate}) to user ${order.userId}`);
+                await userService.addWalletBalance(order.userId, depositUsd);
+                console.log(`✅ Successfully added ${depositUsd} USDT to user ${order.userId}`);
             }
-
-            // Добавляем генерации
-            console.log(`💳 Adding ${pkg.generations} videos to user ${order.userId}`);
-            const addResult = await userService.addPaidQuota(order.userId, pkg.generations);
-
-            if (!addResult) {
-                console.error(`❌ Failed to add quota to user ${order.userId}`);
-                return res.status(500).json({ error: 'Failed to add quota' });
-            }
-
-            console.log(`✅ Successfully added ${pkg.generations} videos to user ${order.userId}`);
 
             // Обрабатываем кешбэк для эксперта
             try {
-                await referralService.processExpertCashback(order.userId, order.amount);
+                const cashbackBase = depositUsd > 0 ? depositUsd : order.amount;
+                await referralService.processExpertCashback(order.userId, cashbackBase);
                 console.log('✅ Cashback processed');
             } catch (cashbackErr) {
                 console.error('⚠️ Cashback processing failed:', cashbackErr.message);
-                // Не фейлим весь webhook из-за кешбека
             }
 
             // Отправляем уведомление пользователю
             try {
                 const botInstance = bot || mainBot;
                 if (botInstance) {
-                    const message = `✅ Оплата успешно получена!\n\n` +
-                        `${pkg.emoji} ${pkg.title}\n` +
-                        `💎 Добавлено генераций: ${pkg.generations}\n\n` +
-                        `Теперь вы можете создавать видео!`;
+                    const message = pkg
+                        ? `✅ Оплата успешно получена!\n\n` +
+                          `${pkg.emoji} ${pkg.title}\n` +
+                          `💎 Добавлено генераций: ${pkg.generations}\n\n` +
+                          `Теперь вы можете создавать видео!`
+                        : `✅ Пополнение баланса картой успешно!\n\n` +
+                          `💰 На ваш баланс зачислено: <b>${depositUsd.toFixed(2)} USDT</b>\n\n` +
+                          `Теперь вы можете создавать видео!`;
                     
                     await botInstance.telegram.sendMessage(order.userId, message, {
+                        parse_mode: 'HTML',
                         reply_markup: {
                             inline_keyboard: [
                                 [{ text: '🎬 Создать видео', callback_data: 'catalog' }],
@@ -166,12 +170,9 @@ app.post('/webhook/lava', async (req, res) => {
                         }
                     });
                     console.log(`✅ Notification sent to user ${order.userId}`);
-                } else {
-                    console.log('⚠️ Bot instance not available for notifications');
                 }
             } catch (notifyErr) {
                 console.error('⚠️ Failed to send notification:', notifyErr.message);
-                // Не фейлим весь webhook из-за уведомления
             }
 
             res.status(200).json({ success: true, message: 'Payment processed' });

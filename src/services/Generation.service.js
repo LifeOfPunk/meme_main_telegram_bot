@@ -325,7 +325,7 @@ export class GenerationService {
             } else {
                 inputPayload = {
                     prompt: promptData,
-                    duration: "6",
+                    duration: "10",
                     resolution: "720p",
                     aspect_ratio: "9:16"
                 };

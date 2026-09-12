@@ -45,10 +45,10 @@ export const PACKAGES = {
 
 
 
-// Стоимость генерации видео (TASK-09 & TASK-15)
-export const BASE_COST = 0.42;
+// Стоимость генерации видео (Google Gemini Omni Flash 1.1: 10s = 126 кредитов = $0.63)
+export const BASE_COST = 0.63;
 export const MULTIPLIER = 2.0;
-export const GENERATION_COST_USDT = Number((BASE_COST * MULTIPLIER).toFixed(2)); // 0.84
+export const GENERATION_COST_USDT = Number((BASE_COST * MULTIPLIER).toFixed(2)); // 1.26 USDT
 
 // Настройки бесплатной квоты
 export const FREE_QUOTA_PER_USER = parseInt(process.env.FREE_QUOTA_PER_USER || '1');
@@ -246,14 +246,15 @@ ${pkg.emoji} ${pkg.title}
         const availablePaid = userData.paid_quota || 0;
         const totalGenerations = availableFree + availablePaid;
         const walletBalance = Number(userData.wallet_balance_usdt ?? userData.wallet_balance ?? 0).toFixed(2);
-        const rubEquivalent = (walletBalance * 90).toFixed(0);
+        const videosFromWallet = Math.floor(Number(walletBalance) / GENERATION_COST_USDT);
+        const walletNote = videosFromWallet > 0 ? ` (~${videosFromWallet} с кошелька)` : '';
         const rawCashback = userData?.totalCashback ?? referralStats?.totalCashback ?? userData?.affiliate_earnings ?? 0;
         const cashbackAmount = Number(rawCashback || 0).toFixed(2);
-        const cashbackRub = (cashbackAmount * 90).toFixed(0);
         
-        message += `📊 Баланс генераций: ${totalGenerations} видео\n`;
+        message += `📊 Баланс генераций: ${totalGenerations} видео${walletNote}\n`;
+        message += `🎬 Стоимость генерации: ${GENERATION_COST_USDT.toFixed(2)} USDT (10 сек)\n`;
         message += `🎁 Бесплатные генерации: ${availableFree}\n`;
-        message += `💎 Платные генерации: ${availablePaid}\n`;
+        message += `💎 Платные пакеты: ${availablePaid}\n`;
         message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
         
         if (Number(cashbackAmount) > 0) {
@@ -356,8 +357,17 @@ export function getMainMenuText(user) {
     const paidQuota = user?.paid_quota || 0;
     const total = freeQuota + paidQuota;
     const balanceUsdt = Number(user?.wallet_balance_usdt ?? user?.wallet_balance ?? 0).toFixed(2);
+    const videosFromWallet = Math.floor(Number(balanceUsdt) / GENERATION_COST_USDT);
+    const walletNote = videosFromWallet > 0 ? ` (~${videosFromWallet} с кошелька)` : '';
 
-    return `🎬 *Добро пожаловать в ViralApp!*\n\nСоздай вирусный персонализированный мем или видео в лучшем качестве.\n\n📊 *Ваш баланс:* ${total} видео\n🎁 Бесплатные генерации: ${freeQuota}\n💎 Платные генерации: ${paidQuota}\n💵 Баланс кошелька: ${balanceUsdt} USDT\n\nВыбери действие:`;
+    return `🎬 *Добро пожаловать в ViralApp!*\n\n` +
+        `Создай вирусный персонализированный мем или видео в лучшем качестве.\n\n` +
+        `📊 *Ваш баланс:* ${total} видео${walletNote}\n` +
+        `🎬 *Стоимость генерации:* ${GENERATION_COST_USDT.toFixed(2)} USDT (10 сек)\n` +
+        `🎁 Бесплатные генерации: ${freeQuota}\n` +
+        `💎 Платные пакеты: ${paidQuota}\n` +
+        `💵 Баланс кошелька: ${balanceUsdt} USDT\n\n` +
+        `Выбери действие:`;
 }
 
 export const WATERMARK_IMAGE_PATH = process.env.WATERMARK_IMAGE_PATH || '/home/aiviral/memememe/2568-11-12_16.23.25-removebg-preview.png';
