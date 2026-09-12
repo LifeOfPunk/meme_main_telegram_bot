@@ -519,7 +519,7 @@ bot.action('custom_prompt', async (ctx) => {
                         inline_keyboard: [
                             [{ 
                                 text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'meemee_official'}` 
+                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_official'}` 
                             }],
                             [{ 
                                 text: '✔️ Я подписался, проверить', 
@@ -543,7 +543,7 @@ bot.action('custom_prompt', async (ctx) => {
             await ctx.editMessageText(MESSAGES.NO_QUOTA, {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '💳 Купить видео', callback_data: 'buy' }],
+                        [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
                         [{ text: '🔙 Назад', callback_data: 'catalog' }]
                     ]
                 }
@@ -657,7 +657,7 @@ bot.action(/meme_(.+)/, async (ctx) => {
                         inline_keyboard: [
                             [{ 
                                 text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'meemee_official'}` 
+                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_official'}` 
                             }],
                             [{ 
                                 text: '✔️ Я подписался, проверить', 
@@ -681,7 +681,7 @@ bot.action(/meme_(.+)/, async (ctx) => {
             await ctx.editMessageText(MESSAGES.NO_QUOTA, {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '💳 Купить видео', callback_data: 'buy' }],
+                        [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
                         [{ text: '🔙 Назад', callback_data: 'catalog' }]
                     ]
                 }

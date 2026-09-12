@@ -21,7 +21,7 @@ export class GenerationService {
         this.apiKey = process.env.KIE_AI_API_KEY;
         // Video generation API endpoint
         this.apiUrl = `https://api.kie.ai/api/v1/jobs`;
-        this.modelName = 'sora-2-text-to-video';
+        this.modelName = process.env.KIE_MODEL || 'grok-imagine/text-to-video';
         this.bot = bot; // Telegram bot instance для отправки уведомлений
         this.userService = new UserService(); // Сервис для работы с квотами
         this.youtubeService = new YouTubeService(); // Сервис для загрузки на YouTube
@@ -311,17 +311,31 @@ export class GenerationService {
                 console.log('Prompt:', promptData);
             }
 
+            // Подготовка input для Kie.ai в зависимости от модели
+            let inputPayload;
+            if (this.modelName.includes('grok')) {
+                inputPayload = {
+                    prompt: promptData,
+                    aspect_ratio: '9:16',
+                    duration: 10,
+                    mode: 'normal',
+                    resolution: '480p'
+                };
+            } else {
+                inputPayload = {
+                    prompt: promptData,
+                    aspect_ratio: 'portrait', // 9:16 формат (1080x1920)
+                    n_frames: "10", 
+                    remove_watermark: true
+                };
+            }
+
             // Создание задачи через API
             const response = await axios.post(
                 `${this.apiUrl}/createTask`,
                 {
                     model: this.modelName,
-                    input: {
-                        prompt: promptData,
-                        aspect_ratio: 'portrait', // 9:16 формат (1080x1920)
-                        n_frames: "10", 
-                        remove_watermark: true
-                    }
+                    input: inputPayload
                 },
                 {
                     headers: {
@@ -410,10 +424,10 @@ export class GenerationService {
                                 ? JSON.parse(taskData.resultJson) 
                                 : taskData.resultJson;
                             
-                            // Используем URL без водяного знака, если доступен
-                            const videoUrl = result.resultUrls && result.resultUrls.length > 0 
-                                ? result.resultUrls[0] 
-                                : null;
+                            const videoUrl = (result.resultUrls && result.resultUrls[0]) ||
+                                (result.result_urls && result.result_urls[0]) ||
+                                (result.output && (Array.isArray(result.output) ? result.output[0] : result.output)) ||
+                                (typeof result === 'string' && /^https?:\/\//i.test(result) ? result : null);
                             
                             if (videoUrl) {
                                 console.log('✅ Video URL received:', videoUrl);
@@ -776,12 +790,12 @@ export class GenerationService {
             // Формируем метаданные для YouTube
             const metadata = {
                 title: generation.memeName 
-                    ? `${generation.memeName} - ${generation.name || 'MeeMee'}`
-                    : `Видео с ${generation.name || 'MeeMee'}`,
+                    ? `${generation.memeName} - ${generation.name || 'AIVIRAL'}`
+                    : `Видео с ${generation.name || 'AIVIRAL'}`,
                 description: generation.prompt 
-                    ? `${generation.prompt}\n\nСоздано с помощью @${process.env.BOT_NAME || 'meemee_official_bot'}`
-                    : `Создано с помощью @${process.env.BOT_NAME || 'meemee_official_bot'}`,
-                tags: ['мем', 'видео', 'meemee', 'ai', 'нейросеть'],
+                    ? `${generation.prompt}\n\nСоздано с помощью @${process.env.BOT_NAME || 'viralapp_official_bot'}`
+                    : `Создано с помощью @${process.env.BOT_NAME || 'viralapp_official_bot'}`,
+                tags: ['мем', 'видео', 'viralapp', 'aiviral', 'ai', 'нейросеть'],
                 categoryId: process.env.YOUTUBE_CATEGORY || '23',
                 privacyStatus: process.env.YOUTUBE_PRIVACY || 'public'
             };

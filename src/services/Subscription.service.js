@@ -4,7 +4,7 @@
 export class SubscriptionService {
     constructor(bot) {
         this.bot = bot;
-        this.requiredChannel = process.env.REQUIRED_CHANNEL || '@meemee_official';
+        this.requiredChannel = process.env.REQUIRED_CHANNEL || '@aiviral_official';
         this.requiredChannelId = process.env.REQUIRED_CHANNEL_ID;
     }
 
@@ -128,7 +128,7 @@ export class SubscriptionService {
      * @returns {string} - Текст сообщения
      */
     getSubscribedMessage() {
-        return `🥳 MeeMee, рады видеть что ты подписался!\n\n` +
+        return `🥳 Рады видеть что ты подписался!\n\n` +
                `Нажимай кнопку "🎁 Бесплатная генерация" и быстрее беги создавать свое первое видео!`;
     }
 

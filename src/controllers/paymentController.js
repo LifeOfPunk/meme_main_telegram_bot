@@ -46,14 +46,27 @@ export async function handleBuy(ctx) {
             }];
         });
         
-        await ctx.editMessageText(MESSAGES.CHOOSE_PACKAGE, {
-            reply_markup: {
-                inline_keyboard: [
-                    ...packageButtons,
-                    [{ text: '🔙 Назад', callback_data: 'main_menu' }]
-                ]
-            }
-        });
+        const buyText = `🎬 Чтобы сгенерировать видео, вам нужно их сначала купить, и после этого вы сможете уже генерировать новые видео.\n\n💎 Выберите подходящий пакет:`;
+        
+        try {
+            await ctx.editMessageText(buyText, {
+                reply_markup: {
+                    inline_keyboard: [
+                        ...packageButtons,
+                        [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+                    ]
+                }
+            });
+        } catch (editErr) {
+            await ctx.reply(buyText, {
+                reply_markup: {
+                    inline_keyboard: [
+                        ...packageButtons,
+                        [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+                    ]
+                }
+            });
+        }
     } catch (err) {
         console.error('❌ Error in handleBuy:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
@@ -79,15 +92,19 @@ export async function handleSelectPackage(ctx, packageKey) {
         // Формируем кнопки оплаты в зависимости от настроек
         const paymentButtons = [];
         
-        if (process.env.CARD_ENABLED === 'true') {
+        const cardEnabled = process.env.CARD_ENABLED !== 'false';
+        const cryptoEnabled = process.env.CRYPTO_ENABLED !== 'false';
+        const starsEnabled = process.env.STARS_ENABLED === 'true';
+        
+        if (cardEnabled) {
             paymentButtons.push([{ text: '💳 Карта', callback_data: `pay_card_${packageKey}` }]);
         }
         
-        if (process.env.CRYPTO_ENABLED === 'true') {
+        if (cryptoEnabled) {
             paymentButtons.push([{ text: '💎 Крипта', callback_data: `pay_crypto_${packageKey}` }]);
         }
         
-        if (process.env.STARS_ENABLED === 'true') {
+        if (starsEnabled) {
             paymentButtons.push([{ text: '⭐️ Оплата звездами', callback_data: `pay_stars_${packageKey}` }]);
         }
         
@@ -514,7 +531,7 @@ export async function handleReferral(ctx) {
         
         const userId = ctx.from.id;
         const user = await userService.getUser(userId);
-        const botName = process.env.BOT_NAME || 'meemee_bot';
+        const botName = process.env.BOT_NAME || 'viralapp_official_bot';
         const stats = await referralService.getReferralStats(userId);
         
         // Проверяем, является ли пользователь экспертом

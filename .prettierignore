@@ -1,0 +1,12 @@
+node_modules/
+package-lock.json
+yarn.lock
+logs/
+*.log
+*.bak*
+*.save
+tmp/
+temp/
+media/
+.env*
+.git/

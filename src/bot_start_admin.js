@@ -117,7 +117,7 @@ bot.start(async (ctx) => {
     console.log(`🚀 /start command received from user ${ctx.from.id}`);
     try {
         await ctx.reply(
-            '👨‍💼 Админ-панель MeeMee\n\nВыберите действие:',
+            '👨‍💼 Админ-панель ViralApp (AIVIRAL)\n\nВыберите действие:',
             ADMIN_MENU
         );
         console.log(`✅ Start menu sent to user ${ctx.from.id}`);
@@ -132,11 +132,11 @@ bot.start(async (ctx) => {
 bot.action('main_menu', async (ctx) => {
     try {
         await ctx.editMessageText(
-            '👨‍💼 Админ-панель MeeMee\n\nВыберите действие:',
+            '👨‍💼 Админ-панель ViralApp (AIVIRAL)\n\nВыберите действие:',
             ADMIN_MENU
         );
     } catch (err) {
-        await ctx.reply('👨‍💼 Админ-панель MeeMee\n\nВыберите действие:', ADMIN_MENU);
+        await ctx.reply('👨‍💼 Админ-панель ViralApp (AIVIRAL)\n\nВыберите действие:', ADMIN_MENU);
     }
 });
 

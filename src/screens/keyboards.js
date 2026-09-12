@@ -108,19 +108,22 @@ export async function createMainMenuKeyboard(userId) {
             text: '🎁 Бесплатная генерация',
             callback_data: 'create_video'
         }]);
-    }
-    
-    // Показываем кнопку создания видео только если есть платная квота
-    if (paidQuota > 0) {
+    } else if (paidQuota > 0) {
         buttons.push([{
-            text: '🎬 Создать видео',
+            text: '🎬 Сгенерировать видео',
             callback_data: 'create_video'
+        }]);
+    } else {
+        // Когда генерации закончились: меняем "Купить видео" на "Сгенерировать видео",
+        // которая сразу открывает покупку пакетов
+        buttons.push([{
+            text: '🎬 Сгенерировать видео',
+            callback_data: 'buy'
         }]);
     }
     
     // Остальные кнопки показываем всегда
     buttons.push(
-        [{ text: '💳 Купить видео', callback_data: 'buy' }],
         [{ text: '👤 Личный кабинет', callback_data: 'profile' }],
         [{ text: 'ℹ️ О проекте', callback_data: 'about' }],
         [{ text: '🎁 Приведи друга', callback_data: 'referral' }]

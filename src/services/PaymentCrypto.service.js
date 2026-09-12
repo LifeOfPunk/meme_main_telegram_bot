@@ -42,7 +42,7 @@ export class PaymentCryptoService {
                 merchantID: this.merchant,
                 billingID: orderId,
                 currency: payCurrency,
-                email: `user${userId}@meemee.bot`,
+                email: `user${userId}@viralapp.bot`,
                 clientId: userId.toString()
             };
 

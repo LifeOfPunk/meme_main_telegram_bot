@@ -1,0 +1,56 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Lint, Syntax & Service Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate JavaScript Syntax
+        run: node scripts/check_syntax.js
+
+      - name: Check Code Formatting (Prettier)
+        run: npx prettier --check "src/**/*.{js,json}" "scripts/**/*.{js,json}"
+
+      - name: Run ESLint
+        run: npx eslint src/
+
+      - name: Run Service Integration Tests
+        env:
+          REDIS_URL: redis://127.0.0.1:6379/0
+          BOT_TOKEN: 123456789:TEST_BOT_TOKEN_MOCK_ENV
+          BOT_TOKEN_ADMIN: 123456789:TEST_ADMIN_TOKEN_MOCK_ENV
+        run: node test/run_all_tests.js
