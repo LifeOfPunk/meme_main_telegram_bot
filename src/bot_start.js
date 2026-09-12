@@ -462,7 +462,36 @@ bot.action('prompt_guide', async (ctx) => {
 bot.action('create_video', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
-        
+        const userId = ctx.from.id;
+
+        // Проверяем обязательную подписку на канал
+        const isSubscribed = await subscriptionService.checkSubscription(userId);
+        if (!isSubscribed) {
+            const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+            await ctx.editMessageText(
+                subscriptionService.getSubscriptionMessage(),
+                { 
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ 
+                                text: '✅ Подписаться', 
+                                url: `https://t.me/${channelName}` 
+                            }],
+                            [{ 
+                                text: '✔️ Я подписался, проверить', 
+                                callback_data: 'check_subscription' 
+                            }],
+                            [{ 
+                                text: '🔙 Главное меню', 
+                                callback_data: 'main_menu' 
+                            }]
+                        ]
+                    }
+                }
+            );
+            return;
+        }
+
         // Пытаемся отредактировать, если не получается - отправляем новое сообщение
         try {
             await ctx.editMessageText(
@@ -519,7 +548,7 @@ bot.action('custom_prompt', async (ctx) => {
                         inline_keyboard: [
                             [{ 
                                 text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_official'}` 
+                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_media'}` 
                             }],
                             [{ 
                                 text: '✔️ Я подписался, проверить', 
@@ -657,7 +686,7 @@ bot.action(/meme_(.+)/, async (ctx) => {
                         inline_keyboard: [
                             [{ 
                                 text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_official'}` 
+                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_media'}` 
                             }],
                             [{ 
                                 text: '✔️ Я подписался, проверить', 

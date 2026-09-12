@@ -103,7 +103,11 @@ export class SubscriptionService {
                     url: `https://t.me/${this.requiredChannel.replace('@', '')}` 
                 }],
                 [{ 
-                    text: '🔙 Назад', 
+                    text: '✔️ Я подписался, проверить', 
+                    callback_data: 'check_subscription' 
+                }],
+                [{ 
+                    text: '🔙 Главное меню', 
                     callback_data: 'main_menu' 
                 }]
             ]
