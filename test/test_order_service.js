@@ -95,13 +95,19 @@ async function testOrderService() {
             });
         }
         
-        console.log('\n6️⃣ Тест получения заказа по email\n');
+        console.log('\n6️⃣ Тест получения заказа по email и parentId\n');
         
         const orderByEmail = await orderService.getOrderByEmail('test@example.com');
         if (orderByEmail) {
             console.log(`   ✅ Заказ найден по email`);
             console.log(`   📋 Order ID: ${orderByEmail.orderId}`);
             console.log(`   📧 Email: ${orderByEmail.email}`);
+        }
+
+        const orderByParentId = await orderService.getOrderByParentId('lava_payment_456');
+        if (orderByParentId) {
+            console.log(`   ✅ Заказ найден по parentId (Lava invoiceId)`);
+            console.log(`   📋 Order ID: ${orderByParentId.orderId}`);
         }
         
         console.log('\n7️⃣ Тест получения всех заказов\n');

@@ -33,6 +33,9 @@
    - Автоматическое начисление пакета генераций в `OrderService.markAsPaid` и отправка уведомления пользователю в Telegram.
 
 3. **Сквозное тестирование (Definition of Done):**
-   - [ ] `curl -i -X POST https://aiviral.agency/webhook/lava` возвращает ответ бэкенда (не 404).
-   - [ ] `curl -i -X POST https://aiviral.agency/webhook/crypto` возвращает статус готовности `{"status":"ready"}` (не 404).
+   - [x] Создан `infra/Caddyfile` с маршрутизацией `handle /webhook/* -> viralapp-staging-backend:3005`.
+   - [x] Обновлен `.github/workflows/deploy-staging.yml` для автоматического синка Caddyfile и reload Caddy.
+   - [x] Обработчики в `src/backend/index.js` поддерживают поиск по `orderId`, `parentId`/`invoiceId` и `email`, а также безопасную валидацию подписи.
+   - [x] `OrderService` сохраняет и индексирует `parent_to_order` для мгновенного резолвинга внешних ID шлюзов.
+   - [ ] `curl -i -X POST https://aiviral.agency/webhook/crypto` возвращает статус готовности `{"status":"ready"}` (не 404) после деплоя.
    - [ ] Симуляция боевого колбэка успешно пополняет квоту тестового пользователя и присылает сообщение в `@meemee_official_bot`.

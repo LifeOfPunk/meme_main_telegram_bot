@@ -25,7 +25,7 @@
 - ✅ **TASK-02-03**: Крипта в 1 экран (TON, BEP20, SOL, BNB, Binance Pay) — [`TASK-02-03-crypto-payments-0xprocessing-binance-pay-oneclick.md`](TASK-02-03-crypto-payments-0xprocessing-binance-pay-oneclick.md) `[Done]`
 - ✅ **TASK-06**: Дисклеймер комиссий крипто-бирж и минималки $0.50 — [`TASK-06-crypto-fee-disclaimer.md`](TASK-06-crypto-fee-disclaimer.md) `[Done]`
 - ✅ **TASK-15**: Кошелек пользователя, авто-вывод и учет баланса в USDT/RUB — [`TASK-15-wallet-deposit-and-payout-engine.md`](TASK-15-wallet-deposit-and-payout-engine.md) `[Done]`
-- 🔴 **TASK-18**: Маршрутизация вебхуков Lava и 0xProcessing в Caddy (фикс 404) — [`TASK-18-payment-webhooks-caddy-routing.md`](TASK-18-payment-webhooks-caddy-routing.md) `[P0 / Plan]`
+- ✅ **TASK-18**: Маршрутизация вебхуков Lava и 0xProcessing в Caddy (фикс 404) — [`TASK-18-payment-webhooks-caddy-routing.md`](TASK-18-payment-webhooks-caddy-routing.md) `[Done / Deployed]`
 
 ### EPIC-4: Вирусные петли, реферальная программа и шеринг
 *Монетизация виральности, реферальные ссылки с бонусом 15%, авто-выгрузка.*

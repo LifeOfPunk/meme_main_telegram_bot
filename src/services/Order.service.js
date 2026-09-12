@@ -13,14 +13,31 @@ export class OrderService {
             await redis.set(`email_to_order:${orderData.email}`, orderId);
         }
 
+        if (orderData.parentId) {
+            await redis.set(`parent_to_order:${orderData.parentId}`, orderId);
+        }
+
+        const outputUid = orderData.output?.id || orderData.output?.uid;
+        if (outputUid) {
+            await redis.set(`parent_to_order:${outputUid}`, orderId);
+        }
+
         console.log(`📝 Order ${orderId} created for user ${userId}`);
         return orderData;
     }
 
     // Получение заказа по ID
     async getOrderById(orderId) {
+        if (!orderId) return null;
         const order = await redis.get(`order:${orderId}`);
         return order ? JSON.parse(order) : null;
+    }
+
+    // Получение заказа по внешнему ID (Lava invoiceId, 0xProcessing UID)
+    async getOrderByParentId(parentId) {
+        if (!parentId) return null;
+        const orderId = await redis.get(`parent_to_order:${parentId}`);
+        return orderId ? await this.getOrderById(orderId) : null;
     }
 
     // Обновление заказа

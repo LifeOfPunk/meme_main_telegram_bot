@@ -52,17 +52,19 @@ app.post('/webhook/lava', async (req, res) => {
         console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        // Извлекаем данные из webhook (новый формат Lava)
-        const eventType = req.body.eventType;
+        // Извлекаем данные из webhook (поддерживаем форматы Lava v1/v2/v3)
+        const eventType = req.body.eventType || req.body.event || req.body.type;
         const status = req.body.status;
-        const email = req.body.buyer?.email;
-        const contractId = req.body.contractId;
+        const email = req.body.buyer?.email || req.body.email;
+        const contractId = req.body.contractId || req.body.contract_id;
+        const invoiceId = req.body.invoiceId || req.body.invoice_id || req.body.id || contractId;
+        const orderId = req.body.orderId || req.body.order_id;
 
-        console.log(`📊 Extracted: eventType=${eventType}, status=${status}, email=${email}, contractId=${contractId}`);
+        console.log(`📊 Extracted: eventType=${eventType}, status=${status}, email=${email}, invoiceId=${invoiceId}, orderId=${orderId}`);
 
-        // Проверка подписи (если используется)
-        const signature = req.headers['x-signature'];
-        if (signature) {
+        // Проверка подписи (если используется и настроен секрет)
+        const signature = req.headers['x-signature'] || req.headers['x-lava-signature'] || req.headers['signature'];
+        if (signature && process.env.WEBHOOK_PASSWORD_PROCESSING) {
             const isValid = verifyLavaSignature(req.body, signature);
             console.log(`🔐 Signature verification: ${isValid ? '✅ Valid' : '❌ Invalid'}`);
             if (!isValid) {
@@ -70,19 +72,26 @@ app.post('/webhook/lava', async (req, res) => {
                 return res.status(403).json({ error: 'Invalid signature' });
             }
         } else {
-            console.log('⚠️ No signature provided');
+            console.log('⚠️ Signature check skipped (header missing or secret not configured)');
         }
 
-        if (!email) {
-            console.error('❌ No email in webhook data');
-            return res.status(400).json({ error: 'Email required' });
+        // Поиск заказа: по orderId, затем по invoiceId (parentId), затем по email
+        let order = null;
+        if (orderId) {
+            order = await orderService.getOrderById(orderId);
+            if (order) console.log(`🔍 Order found by orderId: ${orderId}`);
+        }
+        if (!order && invoiceId) {
+            order = await orderService.getOrderByParentId(invoiceId);
+            if (order) console.log(`🔍 Order found by parent invoiceId: ${invoiceId}`);
+        }
+        if (!order && email) {
+            order = await orderService.getOrderByEmail(email);
+            if (order) console.log(`🔍 Order found by email: ${email}`);
         }
 
-        // Находим заказ по email
-        console.log(`🔍 Searching for order with email: ${email}`);
-        const order = await orderService.getOrderByEmail(email);
         if (!order) {
-            console.error('❌ Order not found for email:', email);
+            console.error('❌ Order not found for webhook params:', { orderId, invoiceId, email });
             return res.status(404).json({ error: 'Order not found' });
         }
 
@@ -204,28 +213,33 @@ app.post('/webhook/crypto', async (req, res) => {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         // 0xProcessing может отправлять разные поля
-        // Поддерживаем оба варианта: BillingID и billingID
-        const billingID = req.body.billingID || req.body.BillingID;
+        // Поддерживаем варианты: billingID, BillingID, orderId, paymentId, uid
+        const billingID = req.body.billingID || req.body.BillingID || req.body.billing_id || req.body.orderId || req.body.order_id;
         const status = req.body.status || req.body.Status;
-        const paymentId = req.body.PaymentId || req.body.paymentId;
+        const paymentId = req.body.PaymentId || req.body.paymentId || req.body.uid || req.body.id;
 
         console.log(`🔍 Extracted fields: billingID=${billingID}, status=${status}, paymentId=${paymentId}`);
 
-        if (!billingID) {
-            console.error('❌ No billingID in webhook');
-            return res.status(400).json({ error: 'Missing billingID' });
+        let order = null;
+        if (billingID) {
+            order = await orderService.getOrderById(billingID);
+            if (order) console.log(`🔍 Crypto order found by billingID: ${billingID}`);
+        }
+        if (!order && paymentId) {
+            order = await orderService.getOrderByParentId(paymentId);
+            if (order) console.log(`🔍 Crypto order found by paymentId/UID: ${paymentId}`);
         }
 
-        const order = await orderService.getOrderById(billingID);
         if (!order) {
-            console.error('❌ Order not found:', billingID);
+            console.error('❌ Crypto order not found for params:', { billingID, paymentId });
             return res.status(404).json({ error: 'Order not found' });
         }
 
-        console.log(`📦 Order found: userId=${order.userId}, package=${order.package}, isPaid=${order.isPaid}`);
+        const effectiveOrderId = order.orderId;
+        console.log(`📦 Order found: orderId=${effectiveOrderId}, userId=${order.userId}, package=${order.package}, isPaid=${order.isPaid}`);
 
         if (order.isPaid) {
-            console.log('ℹ️ Order already paid:', billingID);
+            console.log('ℹ️ Order already paid:', effectiveOrderId);
             return res.status(200).json({ success: true, message: 'Already paid' });
         }
 
@@ -238,10 +252,10 @@ app.post('/webhook/crypto', async (req, res) => {
         );
 
         if (isSuccess) {
-            console.log('✅ Processing successful crypto payment:', billingID);
+            console.log('✅ Processing successful crypto payment:', effectiveOrderId);
             console.log(`📊 Order details: userId=${order.userId}, package=${order.package}, amount=${order.amount}`);
 
-            await orderService.markAsPaid(billingID);
+            await orderService.markAsPaid(effectiveOrderId);
 
             const pkg = PACKAGES[order.package];
             if (!pkg) {
@@ -336,7 +350,7 @@ app.use((req, res) => {
 });
 
 // Error handler
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
     console.error('❌ Server error:', err);
     res.status(500).json({ error: 'Internal server error' });
 });
