@@ -1888,14 +1888,14 @@ if (USE_WEBHOOK) {
         }
         if (user) {
             const balance = Number(user.wallet_balance_usdt || 0);
-            const paidQuota = Number(user.paid_quota || 0);
             if (balance < 2.0) {
                 await userService.addWalletBalance(TESTER_ID, 2.0);
                 console.log(`✅ Bootstrap: credited 2.0 USDT wallet balance to tester ${TESTER_ID}`);
             }
-            if (paidQuota < 10) {
-                await userService.addPaidQuota(TESTER_ID, 10);
-                console.log(`✅ Bootstrap: credited 10 paid generations to tester ${TESTER_ID}`);
+            // Сбрасываем искусственную квоту, если была добавлена bootstrap'ом
+            if (user.paid_quota === 10) {
+                await userService.updateUser(TESTER_ID, { paid_quota: 0 });
+                console.log(`✅ Bootstrap: reset artificial paid_quota to 0 for tester ${TESTER_ID}`);
             }
         }
     } catch (bootstrapErr) {

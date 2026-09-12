@@ -244,15 +244,14 @@ ${pkg.emoji} ${pkg.title}
         // Баланс генераций (суммируем бесплатные и платные)
         const availableFree = userData.free_quota || 0;
         const availablePaid = userData.paid_quota || 0;
-        const totalGenerations = availableFree + availablePaid;
         const walletBalance = Number(userData.wallet_balance_usdt ?? userData.wallet_balance ?? 0).toFixed(2);
         const videosFromWallet = Math.floor(Number(walletBalance) / GENERATION_COST_USDT);
-        const walletNote = videosFromWallet > 0 ? ` (~${videosFromWallet} с кошелька)` : '';
+        const totalGenerations = availableFree + availablePaid + videosFromWallet;
         const rawCashback = userData?.totalCashback ?? referralStats?.totalCashback ?? userData?.affiliate_earnings ?? 0;
         const cashbackAmount = Number(rawCashback || 0).toFixed(2);
         
-        message += `📊 Баланс генераций: ${totalGenerations} видео${walletNote}\n`;
-        message += `🎬 Стоимость генерации: ${GENERATION_COST_USDT.toFixed(2)} USDT (10 сек)\n`;
+        message += `🎬 Стоимость генерации: ${GENERATION_COST_USDT.toFixed(2)}$\n\n`;
+        message += `📊 Ваш баланс генераций: ${totalGenerations} видео\n`;
         message += `🎁 Бесплатные генерации: ${availableFree}\n`;
         message += `💎 Платные пакеты: ${availablePaid}\n`;
         message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
@@ -355,15 +354,14 @@ export const ABOUT_KEYBOARD = {
 export function getMainMenuText(user) {
     const freeQuota = user?.free_quota || 0;
     const paidQuota = user?.paid_quota || 0;
-    const total = freeQuota + paidQuota;
     const balanceUsdt = Number(user?.wallet_balance_usdt ?? user?.wallet_balance ?? 0).toFixed(2);
     const videosFromWallet = Math.floor(Number(balanceUsdt) / GENERATION_COST_USDT);
-    const walletNote = videosFromWallet > 0 ? ` (~${videosFromWallet} с кошелька)` : '';
+    const totalGenerations = freeQuota + paidQuota + videosFromWallet;
 
     return `🎬 *Добро пожаловать в ViralApp!*\n\n` +
-        `Создай вирусный персонализированный мем или видео в лучшем качестве.\n\n` +
-        `📊 *Ваш баланс:* ${total} видео${walletNote}\n` +
-        `🎬 *Стоимость генерации:* ${GENERATION_COST_USDT.toFixed(2)} USDT (10 сек)\n` +
+        `Создай вирусный персонализированный мем или видео в лучшем качестве.\n` +
+        `🎬 *Стоимость генерации:* ${GENERATION_COST_USDT.toFixed(2)}$\n\n` +
+        `📊 *Ваш баланс генераций:* ${totalGenerations} видео\n` +
         `🎁 Бесплатные генерации: ${freeQuota}\n` +
         `💎 Платные пакеты: ${paidQuota}\n` +
         `💵 Баланс кошелька: ${balanceUsdt} USDT\n\n` +

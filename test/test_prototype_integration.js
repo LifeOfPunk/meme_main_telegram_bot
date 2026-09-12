@@ -51,8 +51,8 @@ const userMock = {
 };
 const menuText = getMainMenuText(userMock);
 assert(!menuText.includes('Всего генераций в системе'), 'Must not contain fake generation counter (TASK-20)');
-assert(menuText.includes('📊 *Ваш баланс:* 10 видео (~4 с кошелька)'));
-assert(menuText.includes('🎬 *Стоимость генерации:* 1.30 USDT (10 сек)'));
+assert(menuText.includes('📊 *Ваш баланс генераций:* 14 видео'));
+assert(menuText.includes('🎬 *Стоимость генерации:* 1.30$'));
 assert(menuText.includes('5.50 USDT'));
 assert(!menuText.includes('Omni Flash'), 'Must not contain specific AI model names');
 assert(!menuText.includes('Grok'), 'Must not contain Grok');
@@ -65,7 +65,8 @@ const profileText = MESSAGES.PROFILE(
     15,
     { referredUsers: 4, totalCashback: 25.00 }
 );
-assert(profileText.includes('🎬 Стоимость генерации: 1.30 USDT (10 сек)'));
+assert(profileText.includes('🎬 Стоимость генерации: 1.30$'));
+assert(profileText.includes('📊 Ваш баланс генераций: 15 видео'));
 assert(profileText.includes('💰 Доступно к выводу: 25.00 USDT'));
 assert(profileText.includes('👥 Приглашено друзей: 4'));
 console.log('   ✅ Profile text has USDT balance, video cost and referral withdrawal');
