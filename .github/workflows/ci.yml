@@ -42,6 +42,9 @@ jobs:
       - name: Validate JavaScript Syntax (100 files)
         run: node scripts/check_syntax.js
 
+      - name: ESLint Code Quality Gate
+        run: npx eslint src/bot_start.js src/config.js src/screens/keyboards.js src/controllers/paymentController.js
+
       - name: Run Service Integration Tests
         env:
           REDIS_URL: redis://127.0.0.1:6379/0

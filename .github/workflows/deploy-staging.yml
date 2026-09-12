@@ -35,6 +35,11 @@ jobs:
             git fetch origin staging
             git reset --hard origin/staging
 
+            echo "🌐 Syncing static site pages..."
+            if [ -d "site" ]; then
+              sudo cp -r site/* /opt/aiviral/n8n/site/
+            fi
+
             echo "🐳 Building and starting Staging containers..."
             sudo docker compose -f docker-compose.staging.yml build
             sudo docker compose -f docker-compose.staging.yml up -d --remove-orphans
