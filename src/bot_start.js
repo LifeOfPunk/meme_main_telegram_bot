@@ -458,13 +458,40 @@ bot.action('prompt_guide', async (ctx) => {
     }
 });
 
-// Обработка кнопки создания видео
-bot.action('create_video', async (ctx) => {
+// Вспомогательная функция отображения меню создания видео
+async function showCreateVideoMenu(ctx) {
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
+            [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
+            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
+        ]
+    };
+
+    try {
+        await ctx.editMessageText(MESSAGES.CREATE_VIDEO_MENU, {
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true,
+            reply_markup: keyboard
+        });
+    } catch (editErr) {
+        await ctx.reply(MESSAGES.CREATE_VIDEO_MENU, {
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true,
+            reply_markup: keyboard
+        });
+    }
+}
+
+// Обработка кнопки бесплатной генерации
+bot.action('create_video_free', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
         const userId = ctx.from.id;
+        ctx.session = ctx.session || {};
+        ctx.session.generationMode = 'free';
 
-        // Проверяем обязательную подписку на канал
+        // Проверяем обязательную подписку на канал для бесплатного режима
         const isSubscribed = await subscriptionService.checkSubscription(userId);
         if (!isSubscribed) {
             const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
@@ -492,38 +519,59 @@ bot.action('create_video', async (ctx) => {
             return;
         }
 
-        // Пытаемся отредактировать, если не получается - отправляем новое сообщение
-        try {
-            await ctx.editMessageText(
-                MESSAGES.CREATE_VIDEO_MENU,
-                {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
-                            [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
+        await showCreateVideoMenu(ctx);
+    } catch (err) {
+        console.error('❌ Error in create_video_free:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+});
+
+// Обработка кнопки платной генерации
+bot.action('create_video_paid', async (ctx) => {
+    try {
+        await safeAnswerCbQuery(ctx);
+        ctx.session = ctx.session || {};
+        ctx.session.generationMode = 'paid';
+
+        // Платный режим: подписка на канал НЕ проверяется
+        await showCreateVideoMenu(ctx);
+    } catch (err) {
+        console.error('❌ Error in create_video_paid:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+});
+
+// Обработка общего действия создания видео (для обратной совместимости кнопок повтора)
+bot.action('create_video', async (ctx) => {
+    try {
+        await safeAnswerCbQuery(ctx);
+        const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        if ((user?.paid_quota || 0) > 0) {
+            ctx.session.generationMode = 'paid';
+            await showCreateVideoMenu(ctx);
+        } else {
+            ctx.session.generationMode = 'free';
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+                            ]
+                        }
                     }
-                }
-            );
-        } catch (editErr) {
-            // Если не получилось отредактировать (например, это видео), отправляем новое сообщение
-            await ctx.reply(
-                MESSAGES.CREATE_VIDEO_MENU,
-                {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
-                            [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    }
-                }
-            );
+                );
+                return;
+            }
+            await showCreateVideoMenu(ctx);
         }
     } catch (err) {
         console.error('❌ Error in create_video:', err);
@@ -534,50 +582,56 @@ bot.action('create_video', async (ctx) => {
 bot.action('custom_prompt', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
-        
-        // Проверяем подписку на канал
         const userId = ctx.from.id;
-        const isSubscribed = await subscriptionService.checkSubscription(userId);
-        
-        if (!isSubscribed) {
-            // Показываем предложение подписаться
-            await ctx.editMessageText(
-                subscriptionService.getSubscriptionMessage(),
-                { 
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        const mode = ctx.session.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+        ctx.session.generationMode = mode;
+
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
+
+            if ((user?.free_quota || 0) <= 0) {
+                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ 
-                                text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_media'}` 
-                            }],
-                            [{ 
-                                text: '✔️ Я подписался, проверить', 
-                                callback_data: 'check_subscription' 
-                            }],
-                            [{ 
-                                text: '🔙 Назад', 
-                                callback_data: 'create_video' 
-                            }]
+                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
+                            [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
                         ]
                     }
-                }
-            );
-            return;
-        }
-        
-        // Проверяем квоту перед началом
-        const hasQuota = await userService.hasQuota(userId);
-        
-        if (!hasQuota) {
-            await ctx.editMessageText(MESSAGES.NO_QUOTA, {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
-                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                    ]
-                }
-            });
-            return;
+                });
+                return;
+            }
+        } else {
+            // Платный режим: подписку не требуем
+            if ((user?.paid_quota || 0) <= 0) {
+                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
+                            [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+                        ]
+                    }
+                });
+                return;
+            }
         }
         
         // Сразу переходим к вводу промпта
@@ -671,51 +725,57 @@ bot.action(/meme_(.+)/, async (ctx) => {
             return await safeAnswerCbQuery(ctx, MESSAGES.MEME_SOON, { show_alert: true });
         }
         
-        await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
-        
-        // Проверяем подписку на канал
+        await safeAnswerCbQuery(ctx);
         const userId = ctx.from.id;
-        const isSubscribed = await subscriptionService.checkSubscription(userId);
-        
-        if (!isSubscribed) {
-            // Показываем предложение подписаться
-            await ctx.editMessageText(
-                subscriptionService.getSubscriptionMessage(),
-                { 
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        const mode = ctx.session.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+        ctx.session.generationMode = mode;
+
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
+
+            if ((user?.free_quota || 0) <= 0) {
+                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ 
-                                text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_media'}` 
-                            }],
-                            [{ 
-                                text: '✔️ Я подписался, проверить', 
-                                callback_data: 'check_subscription' 
-                            }],
-                            [{ 
-                                text: '🔙 Назад', 
-                                callback_data: 'catalog' 
-                            }]
+                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
+                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
                         ]
                     }
-                }
-            );
-            return;
-        }
-        
-        // Проверяем квоту
-        const hasQuota = await userService.hasQuota(userId);
-        
-        if (!hasQuota) {
-            await ctx.editMessageText(MESSAGES.NO_QUOTA, {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
-                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                    ]
-                }
-            });
-            return;
+                });
+                return;
+            }
+        } else {
+            // Платный режим: подписка не требуется
+            if ((user?.paid_quota || 0) <= 0) {
+                await ctx.editMessageText(MESSAGES.NO_QUOTA, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
+                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                        ]
+                    }
+                });
+                return;
+            }
         }
         
         // Сохраняем выбранный мем в контексте (для дальнейших шагов)
@@ -855,9 +915,22 @@ bot.on('text', async (ctx) => {
             }
             
             const userId = ctx.from.id;
-            
-            // Списываем квоту
-            const deducted = await userService.deductQuota(userId);
+            const user = await userService.getUser(userId);
+            const mode = ctx.session?.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+
+            // Если бесплатный режим - строгая проверка подписки перед списанием
+            if (mode === 'free') {
+                const isSubscribed = await subscriptionService.checkSubscription(userId);
+                if (!isSubscribed) {
+                    return await ctx.reply(
+                        subscriptionService.getNotSubscribedMessage(),
+                        { reply_markup: subscriptionService.getNotSubscribedKeyboard() }
+                    );
+                }
+            }
+
+            // Списываем квоту соответствующего режима
+            const deducted = await userService.deductQuota(userId, mode);
             if (!deducted) {
                 return await ctx.reply('❌ Недостаточно генераций');
             }
@@ -874,7 +947,7 @@ bot.on('text', async (ctx) => {
             
             if (generation.error) {
                 // Возвращаем квоту при ошибке
-                await userService.refundQuota(userId);
+                await userService.refundQuota(userId, mode === 'paid');
                 return await ctx.reply('❌ Ошибка создания генерации: ' + generation.error);
             }
             
@@ -1073,9 +1146,24 @@ bot.action('confirm_gen', async (ctx) => {
         const memeId = ctx.session.memeId;
         const name = ctx.session.generationName;
         const gender = ctx.session.generationGender;
-        
-        // Списываем квоту
-        const deducted = await userService.deductQuota(userId);
+
+        const user = await userService.getUser(userId);
+        const mode = ctx.session?.generationMode || ((user?.paid_quota || 0) > 0 ? 'paid' : 'free');
+
+        // Если бесплатный режим - строгая живая проверка подписки прямо перед запуском нейросети
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                await safeAnswerCbQuery(ctx, '❌ Нужна подписка на канал', { show_alert: true });
+                return await ctx.editMessageText(
+                    subscriptionService.getNotSubscribedMessage(),
+                    { reply_markup: subscriptionService.getNotSubscribedKeyboard() }
+                );
+            }
+        }
+
+        // Списываем квоту соответствующего режима
+        const deducted = await userService.deductQuota(userId, mode);
         if (!deducted) {
             return await safeAnswerCbQuery(ctx, 'Недостаточно генераций', { show_alert: true });
         }
@@ -1091,7 +1179,7 @@ bot.action('confirm_gen', async (ctx) => {
         
         if (generation.error) {
             // Возвращаем квоту при ошибке
-            await userService.refundQuota(userId);
+            await userService.refundQuota(userId, mode === 'paid');
             return await safeAnswerCbQuery(ctx, 'Ошибка создания генерации', { show_alert: true });
         }
         

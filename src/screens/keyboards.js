@@ -102,20 +102,21 @@ export async function createMainMenuKeyboard(userId) {
     
     const buttons = [];
     
-    // Показываем кнопку бесплатной генерации только если есть бесплатная квота
+    // Кнопка 1: "🎁 Бесплатная генерация" (только если есть бесплатные генерации)
     if (freeQuota > 0) {
         buttons.push([{
             text: '🎁 Бесплатная генерация',
-            callback_data: 'create_video'
+            callback_data: 'create_video_free'
         }]);
-    } else if (paidQuota > 0) {
+    }
+
+    // Кнопка 2: "🎬 Сгенерировать видео" (всегда присутствует)
+    if (paidQuota > 0) {
         buttons.push([{
             text: '🎬 Сгенерировать видео',
-            callback_data: 'create_video'
+            callback_data: 'create_video_paid'
         }]);
     } else {
-        // Когда генерации закончились: меняем "Купить видео" на "Сгенерировать видео",
-        // которая сразу открывает покупку пакетов
         buttons.push([{
             text: '🎬 Сгенерировать видео',
             callback_data: 'buy'

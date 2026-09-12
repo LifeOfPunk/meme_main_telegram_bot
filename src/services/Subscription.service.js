@@ -81,10 +81,10 @@ export class SubscriptionService {
             inline_keyboard: [
                 [{ 
                     text: '🎁 Бесплатная генерация', 
-                    callback_data: 'create_video' 
+                    callback_data: 'create_video_free' 
                 }],
                 [{ 
-                    text: '🔙 Назад', 
+                    text: '🔙 Главное меню', 
                     callback_data: 'main_menu' 
                 }]
             ]

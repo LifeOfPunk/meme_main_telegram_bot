@@ -70,32 +70,43 @@ export class UserService {
         return user.free_quota > 0 || user.paid_quota > 0;
     }
 
-    // Списание квоты
-    async deductQuota(userId) {
+    // Списание бесплатной квоты
+    async deductFreeQuota(userId) {
         const user = await this.getUser(userId);
-        if (!user) return false;
+        if (!user || user.free_quota <= 0) return false;
 
-        if (user.free_quota > 0) {
-            user.free_quota -= 1;
-            user.used_free_quota = (user.used_free_quota || 0) + 1;
-            await this.updateUser(userId, { 
-                free_quota: user.free_quota,
-                used_free_quota: user.used_free_quota
-            });
-            console.log(`⚖️ User ${userId}: deducted 1 free quota. Remaining: ${user.free_quota}`);
-            return true;
-        } else if (user.paid_quota > 0) {
-            user.paid_quota -= 1;
-            user.used_paid_quota = (user.used_paid_quota || 0) + 1;
-            await this.updateUser(userId, { 
-                paid_quota: user.paid_quota,
-                used_paid_quota: user.used_paid_quota
-            });
-            console.log(`⚖️ User ${userId}: deducted 1 paid quota. Remaining: ${user.paid_quota}`);
-            return true;
-        }
+        user.free_quota -= 1;
+        user.used_free_quota = (user.used_free_quota || 0) + 1;
+        await this.updateUser(userId, { 
+            free_quota: user.free_quota,
+            used_free_quota: user.used_free_quota
+        });
+        console.log(`⚖️ User ${userId}: deducted 1 free quota. Remaining: ${user.free_quota}`);
+        return true;
+    }
 
-        return false;
+    // Списание платной квоты
+    async deductPaidQuota(userId) {
+        const user = await this.getUser(userId);
+        if (!user || user.paid_quota <= 0) return false;
+
+        user.paid_quota -= 1;
+        user.used_paid_quota = (user.used_paid_quota || 0) + 1;
+        await this.updateUser(userId, { 
+            paid_quota: user.paid_quota,
+            used_paid_quota: user.used_paid_quota
+        });
+        console.log(`⚖️ User ${userId}: deducted 1 paid quota. Remaining: ${user.paid_quota}`);
+        return true;
+    }
+
+    // Списание квоты (с поддержкой режима: 'free', 'paid', 'any')
+    async deductQuota(userId, mode = 'any') {
+        if (mode === 'free') return await this.deductFreeQuota(userId);
+        if (mode === 'paid') return await this.deductPaidQuota(userId);
+
+        if (await this.deductFreeQuota(userId)) return true;
+        return await this.deductPaidQuota(userId);
     }
 
     // Возврат квоты при ошибке
