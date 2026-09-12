@@ -25,11 +25,14 @@
 - ✅ **TASK-02-03**: Крипта в 1 экран (TON, BEP20, SOL, BNB, Binance Pay) — [`TASK-02-03-crypto-payments-0xprocessing-binance-pay-oneclick.md`](TASK-02-03-crypto-payments-0xprocessing-binance-pay-oneclick.md) `[Done]`
 - ✅ **TASK-06**: Дисклеймер комиссий крипто-бирж и минималки $0.50 — [`TASK-06-crypto-fee-disclaimer.md`](TASK-06-crypto-fee-disclaimer.md) `[Done]`
 - ✅ **TASK-15**: Кошелек пользователя, авто-вывод и учет баланса в USDT/RUB — [`TASK-15-wallet-deposit-and-payout-engine.md`](TASK-15-wallet-deposit-and-payout-engine.md) `[Done]`
+- 🔴 **TASK-18**: Маршрутизация вебхуков Lava и 0xProcessing в Caddy (фикс 404) — [`TASK-18-payment-webhooks-caddy-routing.md`](TASK-18-payment-webhooks-caddy-routing.md) `[P0 / Plan]`
 
 ### EPIC-4: Вирусные петли, реферальная программа и шеринг
 *Монетизация виральности, реферальные ссылки с бонусом 15%, авто-выгрузка.*
 - ✅ **TASK-11**: Вирусный реферальный шеринг видео и инлайн-режим — [`TASK-11-viral-referral-video-share.md`](TASK-11-viral-referral-video-share.md) `[Done]`
 - 🔄 **TASK-12**: Настройка Google OAuth и автовыгрузки на YouTube — [`TASK-12-youtube-oauth-and-auto-upload.md`](TASK-12-youtube-oauth-and-auto-upload.md) `[Ready]`
+- ✅ **TASK-17**: Синхронизация страниц сайта (Гайд 9:16, Оферта, Политика) в репозиторий бота — [`TASK-17-site-legal-and-prompts-guide-sync.md`](TASK-17-site-legal-and-prompts-guide-sync.md) `[Done]`
+- 🚀 **TASK-19**: Визуальная Админка (CMS) в прототипе с прямой кнопкой «Push to GitHub» — [`TASK-19-visual-prototype-admin-cms-github-push.md`](TASK-19-visual-prototype-admin-cms-github-push.md) `[P1 / Plan]`
 
 ---
 
