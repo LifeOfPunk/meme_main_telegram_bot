@@ -1502,11 +1502,11 @@
             },
             crypto_deposit_ton: {
                 title: "Крипто-депозит (TON)",
-                text: "💠 Пополнение через TON (Gram)\n\n💶 Мин. депозит: 0.50 USDT\n💷 Макс. депозит: 10000.00 USDT\n\nОтправьте любую сумму в пределах лимита на ваш персональный адрес:\n\n🔺 Адрес:\n<div class=\"code-box\">EQAFF6Tf_jAATTaj-hs1ireZ0vfdP7bL8x4fHWmM32wvP-G5</div>\n\n🏷 Memo/Tag: <code style=\"color:#f59e0b;\">205756223</code> (обязателен к указанию)\n\n✅ После отправки: нажмите кнопку «Оплачено» ниже, чтобы зачислить баланс!",
-                hasQr: true,
+                text: "💠 Пополнение через TON (Gram)\n\n💶 Мин. депозит: 2.00 USDT (для BNB — 4.00 USDT)\n💷 Макс. депозит: 10000.00 USDT\n\nОтправьте любую сумму в пределах лимита на ваш персональный адрес:\n\n🔺 Адрес:\n<div class=\"code-box\">EQAFF6Tf_jAATTaj-hs1ireZ0vfdP7bL8x4fHWmM32wvP-G5</div>\n\n🏷 Memo/Tag: <code style=\"color:#f59e0b;\">205756223</code> (обязателен к указанию)\n\n⚠️ Внимание: отправляйте не менее 2.00 USDT! Платежи меньше минимальной суммы не зачисляются блокчейном.\n\n✅ После отправки: нажмите кнопку «Проверить оплату» ниже, чтобы зачислить баланс!",
+                hasQr: false,
                 buttons: [
-                    { id: "cdt1", text: "📋 Скопировать адрес", action: "alert('Адрес скопирован в буфер!')", class: "", visible: true },
-                    { id: "cdt2", text: "✅ Оплачено", action: "alert('Запрос проверки оплаты отправлен!')", class: "style-success", visible: true },
+                    { id: "cdt1", text: "🖼️ Показать QR-код", action: "alert('QR-код сгенерирован!')", class: "", visible: true },
+                    { id: "cdt2", text: "✅ Проверить оплату", action: "alert('Запрос проверки оплаты отправлен!')", class: "style-success", visible: true },
                     { id: "cdt3", text: "🔙 Назад к сетям", action: "goTo('crypto_networks')", class: "", visible: true }
                 ],
                 navId: "btn-crypto-ton"

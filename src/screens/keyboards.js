@@ -72,13 +72,13 @@ export function createChainKeyboard(crypto, chains, packageKey = 'single') {
     return { inline_keyboard: buttons };
 }
 
-// Генерация клавиатуры для оплаты криптой (TASK-02-03, TASK-15)
+// Генерация клавиатуры для оплаты криптой (TASK-02-03, TASK-15, TASK-20)
 export function createPaymentCryptoKeyboard(orderId, packageKey = 'deposit', address = null, paymentUrl = null) {
     const buttons = [];
     
-    if (address) {
-        buttons.push([{ text: '📋 Скопировать адрес', copy_text: { text: address } }]);
-    }
+    // Кнопка показа QR-кода по запросу (адрес копируется кликом по тексту в сообщении)
+    buttons.push([{ text: '🖼️ Показать QR-код', callback_data: `show_qr_${orderId}` }]);
+
     if (paymentUrl && typeof paymentUrl === 'string' && paymentUrl.startsWith('http') && !paymentUrl.includes('404')) {
         buttons.push([{ text: '🌐 Страница оплаты', url: paymentUrl }]);
     }

@@ -382,61 +382,99 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposi
             return await safeAnswerCbQuery(ctx, 'Не удалось получить адрес кошелька. Попробуйте другую сеть.', { show_alert: true });
         }
         
-        // Формируем экран пополнения: отображать лимиты Min: 0.50 USDT, Max: 10000 USDT, моноширинный адрес <code>, предупреждение о комиссиях бирж
+        const isBnb = payCurrency.includes('BNB');
+        const minNote = isBnb ? '4.00 USDT (~0.0055 BNB)' : '2.00 USDT';
+
+        // Формируем экран пополнения: адрес в <code>, динамические безопасные лимиты
         let message = `💎 <b>Пополнение баланса криптовалютой (0xProcessing)</b>\n\n`;
         message += `🌐 <b>Сеть:</b> <code>${payCurrency}</code>\n`;
-        message += `💵 <b>Лимиты:</b>\n`;
-        message += `├─ <b>Min:</b> 0.50 USDT\n`;
-        message += `└─ <b>Max:</b> 10000.00 USDT\n\n`;
+        
+        if (pkg) {
+            message += `🎬 <b>Пакет:</b> ${pkg.title} (${pkg.usdt} USDT)\n`;
+            message += `💰 <b>Сумма к оплате:</b> <b>${pkg.usdt} USDT</b>\n\n`;
+        } else {
+            message += `💵 <b>Лимиты:</b>\n`;
+            message += `├─ <b>Min:</b> ${minNote}\n`;
+            message += `└─ <b>Max:</b> 10000.00 USDT\n\n`;
+        }
+
         message += `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n`;
         
         if (destinationTag) {
             message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
         }
         
+        message += `⚠️ <b>ВНИМАНИЕ: Минимальная сумма пополнения — ${minNote}.</b>\n`;
+        message += `<i>Платежи меньше минимальной суммы не зачисляются блокчейном!</i>\n\n`;
         message += `💡 <i>Нажмите на адрес выше, чтобы скопировать</i>\n`;
         message += `⏰ Реквизиты активны 30 минут.\n`;
         message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
         
         const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey, address, paymentUrl);
         
-        // Отправляем нативный QR-код изображением в чат (replyWithPhoto)
-        if (qrCode) {
-            try {
-                console.log('📸 Sending native QR code photo...');
-                await ctx.deleteMessage().catch(() => {});
-                
-                await ctx.replyWithPhoto(
-                    { source: Buffer.from(qrCode.replace(/^data:image\/\w+;base64,/, ''), 'base64') },
-                    {
-                        caption: message,
-                        parse_mode: 'HTML',
-                        reply_markup: keyboard
-                    }
-                );
-                console.log('✅ QR code photo sent successfully');
-                return;
-            } catch (qrErr) {
-                console.error('⚠️ Failed to send QR code photo:', qrErr.message);
-                try {
-                    await ctx.reply(message, {
-                        parse_mode: 'HTML',
-                        reply_markup: keyboard
-                    });
-                    return;
-                } catch (replyErr) {
-                    console.error('⚠️ Failed to send fallback text:', replyErr.message);
-                }
-            }
+        try {
+            await ctx.editMessageText(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
         }
-        
-        await ctx.editMessageText(message, {
-            parse_mode: 'HTML',
-            reply_markup: keyboard
-        });
     } catch (err) {
         console.error('❌ Error in handleChainSelect:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+}
+
+// Показ QR-кода по отдельной кнопке пользователя (TASK-20)
+export async function handleShowQrCode(ctx, orderId) {
+    try {
+        await safeAnswerCbQuery(ctx, 'Генерируем QR-код...');
+        const order = await orderService.getOrderById(orderId);
+        if (!order) {
+            return await ctx.reply('❌ Заказ не найден');
+        }
+
+        const address = order.output?.address || order.output?.Address || order.output?.wallet;
+        const qrCode = order.output?.qrCode;
+        const payCurrency = order.currency || order.input?.currency || 'USDT';
+        const isBnb = payCurrency.includes('BNB');
+        const minNote = isBnb ? '4.00 USDT (~0.0055 BNB)' : '2.00 USDT';
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '✅ Проверить оплату', callback_data: `check_payment_${orderId}` }],
+                [{ text: '🔙 Назад к способам оплаты', callback_data: 'buy' }]
+            ]
+        };
+
+        const caption = `📱 <b>QR-код для оплаты (${payCurrency})</b>\n\n` +
+            `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n` +
+            (order.output?.destinationTag ? `🏷️ <b>Memo/Tag:</b> <code>${order.output.destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b>\n\n` : '') +
+            `⚠️ <b>Минимальная сумма:</b> ${minNote}\n\n` +
+            `👇 После отправки транзакции нажмите кнопку «Проверить оплату»`;
+
+        if (qrCode) {
+            await ctx.replyWithPhoto(
+                { source: Buffer.from(qrCode.replace(/^data:image\/\w+;base64,/, ''), 'base64') },
+                {
+                    caption,
+                    parse_mode: 'HTML',
+                    reply_markup: keyboard
+                }
+            );
+        } else {
+            await ctx.reply(caption, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        }
+    } catch (err) {
+        console.error('❌ Error in handleShowQrCode:', err);
+        await safeAnswerCbQuery(ctx, 'Не удалось отобразить QR-код');
     }
 }
 

@@ -1757,6 +1757,12 @@ bot.action(/check_payment_(.+)/, (ctx) => {
     paymentController.handleCheckPayment(ctx, orderId);
 });
 
+// Показ QR-кода по отдельной кнопке (TASK-20)
+bot.action(/show_qr_(.+)/, (ctx) => {
+    const orderId = ctx.match[1];
+    paymentController.handleShowQrCode(ctx, orderId);
+});
+
 // Обработка неизвестных callback (для отладки)
 bot.on('callback_query', async (ctx) => {
     // Проверяем, был ли callback уже обработан
