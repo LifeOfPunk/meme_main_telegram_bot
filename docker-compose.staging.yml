@@ -36,6 +36,8 @@ services:
     build: .
     container_name: viralapp-staging-admin
     restart: unless-stopped
+    profiles:
+      - with-admin
     command: ["node", "src/bot_start_admin.js"]
     env_file:
       - .env
