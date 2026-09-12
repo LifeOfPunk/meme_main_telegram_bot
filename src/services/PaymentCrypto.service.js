@@ -65,53 +65,26 @@ export class PaymentCryptoService {
 
             console.log('✅ [CRYPTO] Response received');
             console.log(`📥 Status: ${response.status}`);
-            console.log(`📥 Data:`, JSON.stringify(response.data, null, 2));
-            
-            // Расчёт суммы в криптовалюте ПОСЛЕ получения ответа
-            const amountInCrypto = new BigNumber(amount)
-                .div(payCurrency.includes('USDT') || payCurrency.includes('USDC') ? 1 : response.data.rate)
-                .toFixed(5);
-
-            data.amountUSD = amount;
-            data.amount = amountInCrypto;
-            data.package = pkg;
-            data.payCurrency = payCurrency;
-            data.createdAt = new Date().toISOString();
-
-            // Проверка минимальной суммы
-            try {
-                const coinInfoResponse = await axios.get(
-                    `${this.baseUrl}/Api/CoinInfo/${payCurrency}`
-                );
-                
-                if (coinInfoResponse.data && coinInfoResponse.data.min) {
-                    if (new BigNumber(data.amount).isLessThan(coinInfoResponse.data.min)) {
-                        console.log(`❌ Amount ${data.amount} < minimum ${coinInfoResponse.data.min}`);
-                        return { error: 'Сумма оплаты слишком мала для этой сети. Попробуйте другую.' };
-                    }
-                }
-            } catch (minCheckError) {
-                console.warn(`⚠️ Could not check minimum amount, skipping:`, minCheckError.message);
-            }
+            console.log(`📥 Data:`, typeof response.data === 'string' ? `(string, length ${response.data.length})` : JSON.stringify(response.data, null, 2));
 
             // Проверяем, вернулся ли HTML (redirect) или JSON
             let responseData = response.data;
             
             // Если получили JSON напрямую (новый формат API)
-            if (typeof responseData === 'object' && responseData.id) {
+            if (typeof responseData === 'object' && responseData !== null && (responseData.id || responseData.uid)) {
                 console.log('📦 Received JSON response (direct API format)');
                 console.log('📥 Data:', JSON.stringify(responseData, null, 2));
                 
                 // Преобразуем в нужный формат
-                const uid = responseData.id.toString();
+                const uid = (responseData.id || responseData.uid).toString();
                 responseData = {
                     uid: uid,
                     id: uid,
-                    paymentUrl: `https://app.0xprocessing.com/payment/${uid}`,
+                    paymentUrl: responseData.paymentUrl || `https://app.0xprocessing.com/payment/${uid}`,
                     address: responseData.address,
                     qrCode: responseData.qrCode,
-                    rate: responseData.rate,
-                    minimumAmount: responseData.minimumAmount,
+                    rate: responseData.rate ? parseFloat(responseData.rate) : null,
+                    minimumAmount: responseData.minimumAmount ? parseFloat(responseData.minimumAmount) : null,
                     destinationTag: responseData.destinationTag,
                     expDate: responseData.expDate
                 };
@@ -170,7 +143,6 @@ export class PaymentCryptoService {
                     
                     // Добавляем QR-код если найден
                     if (qrCodeMatch && qrCodeMatch[1]) {
-                        // QR-код может быть экранирован, убираем лишние слэши
                         responseData.qrCode = qrCodeMatch[1].replace(/\\"/g, '"').replace(/\\\//g, '/');
                         console.log(`✅ Extracted QR code (length: ${responseData.qrCode.length})`);
                     }
@@ -193,18 +165,50 @@ export class PaymentCryptoService {
                         hasRate: !!responseData.rate,
                         hasMinAmount: !!responseData.minimumAmount
                     });
-                    
-                    // Если адрес не найден в HTML (старый формат)
-                    if (!responseData.address) {
-                        console.log('ℹ️ Payment address will be available on payment page');
-                        console.log(`🔗 Payment URL: ${responseData.paymentUrl}`);
-                    }
                 } else {
                     console.error('❌ Could not extract UID from HTML response');
                     return { error: 'Не удалось создать платеж. Попробуйте другую сеть.' };
                 }
             } else {
                 console.log('📦 Received JSON response (old 0xProcessing format)');
+            }
+
+            // Расчёт суммы в криптовалюте ПОСЛЕ извлечения курса
+            let amountInCrypto;
+            const isUsdPegged = payCurrency.includes('USDT') || payCurrency.includes('USDC');
+            if (isUsdPegged) {
+                amountInCrypto = new BigNumber(amount).toFixed(2);
+            } else {
+                const effectiveRate = responseData?.rate;
+                if (effectiveRate && !isNaN(effectiveRate) && Number(effectiveRate) > 0) {
+                    amountInCrypto = new BigNumber(amount).div(effectiveRate).toFixed(5);
+                } else {
+                    console.warn(`⚠️ Rate not available for ${payCurrency}, using default amount`);
+                    amountInCrypto = new BigNumber(amount).toFixed(5);
+                }
+            }
+
+            data.amountUSD = amount;
+            data.amount = amountInCrypto;
+            data.package = pkg;
+            data.payCurrency = payCurrency;
+            data.createdAt = new Date().toISOString();
+
+            // Проверка минимальной суммы
+            try {
+                const coinInfoResponse = await axios.get(
+                    `${this.baseUrl}/Api/CoinInfo/${payCurrency}`,
+                    { timeout: 5000 }
+                );
+                
+                if (coinInfoResponse.data && coinInfoResponse.data.min) {
+                    if (new BigNumber(data.amount).isLessThan(coinInfoResponse.data.min)) {
+                        console.log(`❌ Amount ${data.amount} < minimum ${coinInfoResponse.data.min}`);
+                        return { error: 'Сумма оплаты слишком мала для этой сети. Попробуйте другую.' };
+                    }
+                }
+            } catch (minCheckError) {
+                console.warn(`⚠️ Could not check minimum amount, skipping:`, minCheckError.message);
             }
             
             console.log(`📥 Final Data:`, JSON.stringify(responseData, null, 2));
@@ -219,6 +223,7 @@ export class PaymentCryptoService {
                 isFiat: false,
                 package: pkg,
                 amount: amount,
+                cryptoAmount: amountInCrypto,
                 currency: payCurrency
             };
 

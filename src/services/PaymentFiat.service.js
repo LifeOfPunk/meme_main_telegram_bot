@@ -26,6 +26,12 @@ export class PaymentFiatService {
             const orderId = orderService.generateOrderId('FIAT');
             console.log(`📝 Generated order ID: ${orderId}`);
 
+            const apiKey = (this.api || '').trim();
+            if (!apiKey) {
+                console.error('❌ LAVA_PAYMENT_API is missing or empty');
+                return { error: 'Платежный шлюз Lava не настроен (отсутствует API ключ)' };
+            }
+
             // Получаем Offer ID из конфига
             const packageConfig = PACKAGES[pkg];
             console.log(`📦 Package config:`, packageConfig);
@@ -36,11 +42,33 @@ export class PaymentFiatService {
                 return { error: 'Некорректный пакет или не настроен Lava Offer ID' };
             }
 
+            // Нормализация и валидация email
+            let finalEmail = (email || '').toString().trim().toLowerCase();
+            const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+            if (!emailRegex.test(finalEmail)) {
+                if (userId) {
+                    finalEmail = `user${userId}@viralapp.bot`;
+                    console.log(`⚠️ Invalid or empty email provided, fallback to auto-generated: ${finalEmail}`);
+                } else {
+                    return { error: 'Неверный формат email адреса' };
+                }
+            }
+
+            // Валидация суммы
+            const finalAmount = Number(amount || packageConfig.rub);
+            if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) {
+                console.error(`❌ Invalid amount: ${amount} (rub: ${packageConfig.rub})`);
+                return { error: 'Некорректная сумма платежа' };
+            }
+
+            const currencyCode = this.currency[bank] || 'RUB';
+            const offerId = packageConfig.offerIdLava.trim();
+
             const data = {
-                email,
-                offerId: packageConfig.offerIdLava,
+                email: finalEmail,
+                offerId: offerId,
                 buyerLanguage: 'RU',
-                currency: this.currency[bank],
+                currency: currencyCode,
             };
 
             const requestUrl = `${this.baseUrl}/api/v2/invoice`;
@@ -48,7 +76,7 @@ export class PaymentFiatService {
             console.log('📤 Preparing API request to Lava');
             console.log(`🌐 URL: ${requestUrl}`);
             console.log(`📦 Request data:`, JSON.stringify(data, null, 2));
-            console.log(`🔑 X-Api-Key header: ${this.api?.substring(0, 20)}...`);
+            console.log(`🔑 X-Api-Key header: ${apiKey.substring(0, 10)}... (len: ${apiKey.length})`);
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
             const response = await axios.post(
@@ -56,8 +84,11 @@ export class PaymentFiatService {
                 data,
                 {
                     headers: {
-                        'X-Api-Key': this.api
-                    }
+                        'X-Api-Key': apiKey,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    timeout: 30000
                 }
             );
 
@@ -72,17 +103,23 @@ export class PaymentFiatService {
                 return { error: response.data.error };
             }
 
+            const paymentUrl = response.data?.url || response.data?.paymentUrl || response.data?.payUrl || (response.data?.id ? `https://lava.top/invoice/${response.data.id}` : null);
+            const normalizedOutput = {
+                ...response.data,
+                paymentUrl
+            };
+
             const orderData = {
                 orderId,
                 userId,
-                email,
+                email: finalEmail,
                 input: data,
-                output: response.data,
+                output: normalizedOutput,
                 isPaid: false,
                 isFiat: true,
                 package: pkg,
-                amount: amount,
-                parentId: response.data.id,
+                amount: finalAmount,
+                parentId: response.data?.id,
                 createdAt: new Date().toISOString()
             };
 
@@ -100,10 +137,28 @@ export class PaymentFiatService {
             console.error(`Error name: ${err.name}`);
             console.error(`Error code: ${err.code}`);
             
+            let detailedErrorMessage = null;
             if (err.response) {
                 console.error(`HTTP Status: ${err.response.status}`);
                 console.error(`Response data:`, JSON.stringify(err.response.data, null, 2));
                 console.error(`Response headers:`, JSON.stringify(err.response.headers, null, 2));
+
+                const respData = err.response.data;
+                if (typeof respData === 'string') {
+                    detailedErrorMessage = respData;
+                } else if (respData?.message) {
+                    detailedErrorMessage = Array.isArray(respData.message)
+                        ? respData.message.join(', ')
+                        : respData.message;
+                } else if (respData?.error) {
+                    detailedErrorMessage = typeof respData.error === 'object'
+                        ? JSON.stringify(respData.error)
+                        : respData.error;
+                } else if (respData?.errors) {
+                    detailedErrorMessage = Array.isArray(respData.errors)
+                        ? respData.errors.map(e => e.msg || e.message || JSON.stringify(e)).join(', ')
+                        : JSON.stringify(respData.errors);
+                }
             }
             
             if (err.request) {
@@ -115,7 +170,8 @@ export class PaymentFiatService {
             console.error('Full error stack:', err.stack);
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             
-            return { error: err.toString() };
+            const errorMsg = detailedErrorMessage || err.message || 'Ошибка платежного шлюза Lava';
+            return { error: errorMsg, status: err.response?.status };
         }
     }
 

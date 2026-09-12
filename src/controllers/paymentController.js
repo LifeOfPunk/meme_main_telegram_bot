@@ -1,5 +1,5 @@
 import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_TYPE_KEYBOARD, ABOUT_KEYBOARD } from '../config.js';
-import { createCryptoKeyboard, createChainKeyboard, createPaymentCryptoKeyboard, createAfterPaymentKeyboard, createMainMenuKeyboard } from '../screens/keyboards.js';
+import { createCryptoKeyboard, createChainKeyboard, createPaymentCryptoKeyboard, createAfterPaymentKeyboard, createMainMenuKeyboard, createProfileKeyboard } from '../screens/keyboards.js';
 import { PaymentCryptoService } from '../services/PaymentCrypto.service.js';
 import { PaymentFiatService } from '../services/PaymentFiat.service.js';
 import { UserService } from '../services/User.service.js';
@@ -150,13 +150,17 @@ export async function handlePayCard(ctx, packageKey = 'single') {
         ctx.session.selectedPackage = packageKey;
         
         const pkg = PACKAGES[packageKey];
+        if (!pkg) {
+            return await safeAnswerCbQuery(ctx, 'Пакет не найден');
+        }
         
         await ctx.editMessageText(
             MESSAGES.EMAIL_REQUEST(pkg),
             {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '⏪ Вернуться назад', callback_data: `select_package_${packageKey}` }]
+                        [{ text: '⚡ Оплатить в 1 клик (без ввода email)', callback_data: `pay_card_oneclick_${packageKey}` }],
+                        [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
                     ]
                 }
             }
@@ -167,7 +171,58 @@ export async function handlePayCard(ctx, packageKey = 'single') {
     }
 }
 
-// Обработчик оплаты криптой
+// Обработчик оплаты картой в 1 клик (без ручного ввода email)
+export async function handlePayCardOneClick(ctx, packageKey = 'single') {
+    try {
+        await safeAnswerCbQuery(ctx);
+        
+        const pkg = PACKAGES[packageKey];
+        if (!pkg) {
+            return await safeAnswerCbQuery(ctx, 'Пакет не найден');
+        }
+        
+        const userId = ctx.from.id;
+        const email = ctx.session?.email || `user${userId}@viralapp.bot`;
+        
+        ctx.session = ctx.session || {};
+        delete ctx.session.waitingFor;
+        ctx.session.email = email;
+        
+        const payment = await paymentFiatService.createPayment({
+            userId,
+            email,
+            amount: pkg.rub,
+            bank: 'BANK131',
+            package: packageKey
+        });
+        
+        if (payment.error) {
+            return await ctx.reply('❌ Ошибка создания платежа: ' + payment.error);
+        }
+        
+        const paymentUrl = payment.output?.paymentUrl || payment.output?.payUrl || payment.output?.url;
+        
+        await ctx.reply(
+            MESSAGES.PAYMENT_CARD_CONFIRM(pkg),
+            {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '💳 Оплатить картой', url: paymentUrl }],
+                        [{ text: '📝 Договор-оферта', url: 'https://telegra.ph/Dogovor-oferta-11-04' }],
+                        [{ text: '📝 Политика конфиденциальности', url: 'https://telegra.ph/Politika-konfidencialnosti-11-04' }],
+                        [{ text: '❓ Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'aiviral_manager'}` }],
+                        [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
+                    ]
+                }
+            }
+        );
+    } catch (err) {
+        console.error('❌ Error in handlePayCardOneClick:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+}
+
+// Обработчик оплаты криптой (выбор криптовалюты в 1 шаг)
 export async function handlePayCrypto(ctx, packageKey = 'single') {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
@@ -176,17 +231,24 @@ export async function handlePayCrypto(ctx, packageKey = 'single') {
         ctx.session.selectedPackage = packageKey;
         
         const pkg = PACKAGES[packageKey];
+        if (!pkg) {
+            return await safeAnswerCbQuery(ctx, 'Пакет не найден', { show_alert: true });
+        }
+        
+        // 4 кнопки сетей сразу в 1 шаг согласно спецификации TASK-02-03
+        const cryptoButtons = [
+            [{ text: '💎 TON (Gram)', callback_data: `chain_TON_TON_${packageKey}` }],
+            [{ text: '⚡ USDT (BEP20)', callback_data: `chain_USDT_USDT_(BEP20)_${packageKey}` }],
+            [{ text: '🟣 USDT (SOL)', callback_data: `chain_USDT_USDT_(SOL)_${packageKey}` }],
+            [{ text: '🟡 BNB (BEP20)', callback_data: `chain_BNB_BNB_(BEP20)_${packageKey}` }],
+            [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
+        ];
         
         await ctx.editMessageText(
             MESSAGES.PAYMENT_CRYPTO_SELECT(pkg),
             { 
                 reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '💵 USDT', callback_data: `crypto_USDT_${packageKey}` }],
-                        [{ text: '💰 USDC', callback_data: `crypto_USDC_${packageKey}` }],
-                        [{ text: '💎 TON', callback_data: `crypto_TON_${packageKey}` }],
-                        [{ text: '🔙 Назад', callback_data: `select_package_${packageKey}` }]
-                    ]
+                    inline_keyboard: cryptoButtons
                 }
             }
         );
@@ -313,30 +375,37 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'single
         // Получаем ссылку на страницу оплаты
         const paymentUrl = payment.output?.paymentUrl || null;
         
-        // Формируем сообщение
-        let message = `${pkg.emoji} ${pkg.title}\n\n`;
-        message += `💰 Сумма: <code>${amount}</code> ${payCurrency}\n`;
-        message += `💵 Стоимость: $${pkg.usdt}\n\n`;
+        // Формируем сообщение с предупреждением о биржевых комиссиях (TASK-06)
+        let message = `${pkg.emoji} <b>${pkg.title}</b>\n\n`;
+        message += `💰 <b>Сумма к оплате:</b> <code>${amount}</code> ${payCurrency}\n`;
+        message += `💵 <b>Стоимость:</b> $${pkg.usdt}\n\n`;
         
         // Если есть адрес, показываем его
         if (address) {
-            message += `📍 Адрес для оплаты:\n<code>${address}</code>\n\n`;
+            message += `📍 <b>Адрес для оплаты:</b>\n<code>${address}</code>\n\n`;
             
             if (destinationTag) {
-                message += `🏷️ Memo/Tag: <code>${destinationTag}</code>\n⚠️ ТЕГ ОБЯЗАТЕЛЕН!\n\n`;
+                message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
             }
             
-            message += `💡 Нажмите на адрес, чтобы скопировать\n\n`;
+            message += `⚠️ <b>ВНИМАНИЕ: Если отправляете с БИРЖИ (Gate, Bybit, Binance):</b>\n`;
+            message += `Биржа удерживает фиксированную комиссию из суммы вывода!\n`;
+            message += `Указывайте сумму вывода так, чтобы на адрес поступило <b>НЕ МЕНЬШЕ</b>:\n`;
+            message += `👉 <code>${amount}</code> ${payCurrency}\n`;
+            message += `<i>При недоплате даже $0.10 платёж не зачтётся автоматически!</i>\n\n`;
+            
+            message += `💡 <i>Нажмите на адрес или сумму, чтобы скопировать</i>\n`;
             message += `⏰ У вас есть 30 минут для оплаты\n`;
-            message += `👇 Нажмите кнопку ниже для перехода к оплате`;
+            message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
         } else {
-            // Если адреса нет, показываем только ссылку
+            message += `⚠️ <b>ВНИМАНИЕ: Если отправляете с БИРЖИ (Gate, Bybit, Binance):</b>\n`;
+            message += `Биржа удерживает комиссию из суммы вывода! Сумма поступления должна быть не меньше <code>${amount}</code> ${payCurrency}.\n\n`;
             message += `⏰ У вас есть 30 минут для оплаты\n\n`;
             message += `👇 Нажмите кнопку ниже для перехода к странице оплаты\n`;
             message += `На странице вы увидите адрес кошелька и QR-код`;
         }
         
-        const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey);
+        const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey, paymentUrl);
         
         // Если есть QR-код, отправляем его как фото
         if (qrCode && address) {
@@ -632,7 +701,8 @@ export async function handleProfile(ctx) {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
-        const userId = ctx.from.id;
+        const userId = ctx.from?.id;
+        if (!userId) return;
         const user = await userService.getUser(userId);
         const generations = await generationService.getUserGenerations(userId);
         const referralStats = await referralService.getReferralStats(userId);
@@ -642,16 +712,17 @@ export async function handleProfile(ctx) {
         }
         
         const message = MESSAGES.PROFILE(user, generations, referralStats);
+        const keyboard = createProfileKeyboard(user);
         
-        await ctx.editMessageText(message, {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '📃 История генераций', callback_data: 'profile_history' }],
-                    [{ text: '💳 Купить видео', callback_data: 'buy' }],
-                    [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
-                ]
-            }
-        });
+        try {
+            await ctx.editMessageText(message, {
+                reply_markup: keyboard
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                reply_markup: keyboard
+            });
+        }
     } catch (err) {
         console.error('❌ Error in handleProfile:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');

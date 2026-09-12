@@ -57,20 +57,21 @@ export const EXPERT_CASHBACK_PERCENT = parseInt(process.env.EXPERT_REFERRAL_CASH
 export const STARS_ENABLED = process.env.STARS_ENABLED === 'true';
 
 // Поддерживаемые криптовалюты (точные названия из 0xProcessing)
-export const SUPPORTED_CRYPTO = {
-    USDT: [
-        { name: 'USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' },
-        { name: 'USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
-        { name: 'USDT (TON)', processing: 'USDT (TON)', chainName: 'TON' }
-    ],
-    USDC: [
-        { name: 'USDC (SOL)', processing: 'USDC (SOL)', chainName: 'Solana' },
-        { name: 'USDC (BEP20)', processing: 'USDC (BEP20)', chainName: 'Binance Smart Chain' }
-    ],
-    TON: [
-        { name: 'TON', processing: 'TON', chainName: 'TON' }
-    ]
-};
+// 1-шаговый выбор сетей: TON, USDT (BEP20), USDT (SOL), BNB (BEP20)
+export const SUPPORTED_CRYPTO = [
+    { id: 'TON', name: '💎 TON (Gram)', processing: 'TON', chainName: 'TON' },
+    { id: 'USDT_BEP20', name: '⚡ USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
+    { id: 'USDT_SOL', name: '🟣 USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' },
+    { id: 'BNB_BEP20', name: '🟡 BNB (BEP20)', processing: 'BNB (BEP20)', chainName: 'Binance Smart Chain' }
+];
+
+// Для обратной совместимости
+SUPPORTED_CRYPTO.TON = [{ name: '💎 TON (Gram)', processing: 'TON', chainName: 'TON' }];
+SUPPORTED_CRYPTO.USDT = [
+    { name: '⚡ USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
+    { name: '🟣 USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' }
+];
+SUPPORTED_CRYPTO.BNB = [{ name: '🟡 BNB (BEP20)', processing: 'BNB (BEP20)', chainName: 'Binance Smart Chain' }];
 
 // Тексты сообщений
 export const MESSAGES = {
@@ -203,7 +204,7 @@ ${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
 
 🎬 ${pkg.title}: ${pkg.usdt} USDT
 
-Выберите криптовалюту:`,
+Выберите сеть для оплаты:`,
 
     PAYMENT_CRYPTO_NETWORK: (pkg, crypto) => `🎬 ${pkg.title}: ${pkg.usdt} USDT
 
@@ -242,9 +243,9 @@ ${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
         const availableFree = user.free_quota || 0;
         const availablePaid = user.paid_quota || 0;
         
-        message += `🎬 Баланс генераций:\n`;
-        message += `├─ 🎁 Доступно бесплатных: ${availableFree}\n`;
-        message += `└─ 💎 Доступно платных: ${availablePaid}\n\n`;
+        message += `📊 Баланс генераций:\n`;
+        message += `🎁 Бесплатные генерации: ${availableFree}\n`;
+        message += `💎 Платные генерации: ${availablePaid}\n\n`;
         
         // Добавляем реферальную статистику
         if (referralStats && (referralStats.referredUsers > 0 || referralStats.expertReferrals > 0)) {
@@ -258,6 +259,7 @@ ${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
             } else if (referralStats.referredUsers > 0) {
                 message += `└─ 🎁 Получено бонусов: ${referralStats.referredUsers}\n`;
             }
+            message += `\n`;
         }
         return message;
     },

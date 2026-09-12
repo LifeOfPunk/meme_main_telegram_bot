@@ -18,6 +18,8 @@ import {
     createMainMenuKeyboard
 } from './screens/keyboards.js';
 import { getMemeById } from './utils/memeLoader.js';
+import { registerSocialGiftHandlers } from './handlers/user_handlers/social_gift_handler.js';
+import { registerUserMenuHandlers } from './handlers/user_handlers/user_menu.js';
 
 // Проверка токена бота
 if (!process.env.BOT_TOKEN) {
@@ -77,6 +79,10 @@ bot.action('show_full_guide', async (ctx) => {
 
 // Session middleware
 bot.use(session());
+
+// Регистрация обработчиков соцсетей и меню пользователя
+registerSocialGiftHandlers(bot);
+registerUserMenuHandlers(bot);
 
 // Helper функция для безопасного answerCbQuery
 async function safeAnswerCbQuery(ctx, text = undefined, options = {}) {
@@ -204,19 +210,18 @@ bot.start(async (ctx) => {
 
         // Отправка приветственного сообщения
         if (showWelcome && isNewUser) {
-            // Для новых пользователей отправляем приветственное изображение
+            // Для новых пользователей отправляем приветственное изображение и очищаем старую клавиатуру
             try {
+                await ctx.reply('✨ Загружаем...', { reply_markup: { remove_keyboard: true } });
                 await ctx.replyWithPhoto(
                     { source: './media/start.png' },
                     {
                         caption: MESSAGES.WELCOME,
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [
-                                [{ text: 'START' }]
-                            ],
-                            resize_keyboard: true,
-                            one_time_keyboard: true
+                            inline_keyboard: [
+                                [{ text: '🚀 START', callback_data: 'main_menu' }]
+                            ]
                         }
                     }
                 );
@@ -225,16 +230,15 @@ bot.start(async (ctx) => {
                 await ctx.reply(MESSAGES.WELCOME, { 
                     parse_mode: 'Markdown',
                     reply_markup: {
-                        keyboard: [
-                            [{ text: 'START' }]
-                        ],
-                        resize_keyboard: true,
-                        one_time_keyboard: true
+                        inline_keyboard: [
+                            [{ text: '🚀 START', callback_data: 'main_menu' }]
+                        ]
                     }
                 });
             }
         } else {
-            // Для существующих пользователей всегда показываем главное меню
+            // Для существующих пользователей всегда показываем главное меню с удалением reply-клавиатуры
+            await ctx.reply('🚀 Загрузка меню...', { reply_markup: { remove_keyboard: true } });
             const mainMenu = await createMainMenuKeyboard(userId);
             await ctx.reply(MESSAGES.MAIN_MENU, { 
                 reply_markup: mainMenu
@@ -861,17 +865,16 @@ bot.on('text', async (ctx) => {
             await userService.createUser(ctx.from);
             
             try {
+                await ctx.reply('✨ Загружаем...', { reply_markup: { remove_keyboard: true } });
                 await ctx.replyWithPhoto(
                     { source: './media/start.png' },
                     {
                         caption: MESSAGES.WELCOME,
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [
-                                [{ text: 'START' }]
-                            ],
-                            resize_keyboard: true,
-                            one_time_keyboard: true
+                            inline_keyboard: [
+                                [{ text: '🚀 START', callback_data: 'main_menu' }]
+                            ]
                         }
                     }
                 );
@@ -880,11 +883,9 @@ bot.on('text', async (ctx) => {
                 await ctx.reply(MESSAGES.WELCOME, { 
                     parse_mode: 'Markdown',
                     reply_markup: {
-                        keyboard: [
-                            [{ text: 'START' }]
-                        ],
-                        resize_keyboard: true,
-                        one_time_keyboard: true
+                        inline_keyboard: [
+                            [{ text: '🚀 START', callback_data: 'main_menu' }]
+                        ]
                     }
                 });
             }
@@ -893,8 +894,9 @@ bot.on('text', async (ctx) => {
         
         ctx.session = ctx.session || {};
         
-        // Обработка кнопки START
+        // Обработка кнопки START (удаляем reply-клавиатуру, чтобы кнопка START не залипала на Desktop)
         if (ctx.message.text === 'START') {
+            await ctx.reply('🚀 Загрузка меню...', { reply_markup: { remove_keyboard: true } });
             const mainMenu = await createMainMenuKeyboard(userId);
             await ctx.reply(MESSAGES.MAIN_MENU, { 
                 reply_markup: mainMenu
@@ -1060,17 +1062,18 @@ bot.on('text', async (ctx) => {
             
         } else if (ctx.session.waitingFor === 'email') {
             // Обработка ввода email для оплаты картой
-            const email = ctx.message.text.trim();
+            const email = ctx.message.text.trim().toLowerCase();
             
-            // Простая валидация email
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            // RFC-совместимая валидация email
+            const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
             if (!emailRegex.test(email)) {
                 return await ctx.reply(
                     MESSAGES.EMAIL_INVALID,
                     {
                         reply_markup: {
                             inline_keyboard: [
-                                [{ text: '⏪ Вернуться назад', callback_data: `select_package_${ctx.session.selectedPackage || 'single'}` }]
+                                [{ text: '⚡ Оплатить в 1 клик (без ввода email)', callback_data: `pay_card_oneclick_${ctx.session.selectedPackage || 'single'}` }],
+                                [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${ctx.session.selectedPackage || 'single'}` }]
                             ]
                         }
                     }
@@ -1096,16 +1099,18 @@ bot.on('text', async (ctx) => {
                 return await ctx.reply('❌ Ошибка создания платежа: ' + payment.error);
             }
             
+            const paymentUrl = payment.output?.paymentUrl || payment.output?.payUrl || payment.output?.url;
+            
             await ctx.reply(
                 MESSAGES.PAYMENT_CARD_CONFIRM(pkg),
                 {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: '✅ Оплатить', url: payment.output.paymentUrl }],
+                            [{ text: '💳 Оплатить картой', url: paymentUrl }],
                             [{ text: '📝 Договор-оферта', url: 'https://telegra.ph/Dogovor-oferta-11-04' }],
                             [{ text: '📝 Политика конфиденциальности', url: 'https://telegra.ph/Politika-konfidencialnosti-11-04' }],
                             [{ text: '❓ Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'aiviral_manager'}` }],
-                            [{ text: '⏪ Вернуться назад', callback_data: `select_package_${packageKey}` }]
+                            [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
                         ]
                     }
                 }
@@ -1324,7 +1329,7 @@ async function waitForGeneration(ctx, generationId, quickCheckAttempts = 10) {
             }
             
             try {
-                await ctx.replyWithVideo(
+                const sentVideo = await ctx.replyWithVideo(
                     { url: generation.videoUrl },
                     { 
                         caption: '✅ Ваше видео готово!\n\n🎬 Генерация успешно завершена!',
@@ -1337,6 +1342,11 @@ async function waitForGeneration(ctx, generationId, quickCheckAttempts = 10) {
                         }
                     }
                 );
+                if (sentVideo?.video?.file_id) {
+                    await generationService.updateGeneration(generation.generationId, {
+                        telegramFileId: sentVideo.video.file_id
+                    });
+                }
             } catch (err) {
                 await ctx.reply(
                     '✅ Ваше видео готово!\n\n🎬 Генерация успешно завершена!\n\n' +
@@ -1389,6 +1399,14 @@ bot.on('inline_query', async (ctx) => {
     try {
         const userId = ctx.from.id;
         const query = ctx.inlineQuery.query.trim();
+        const botName = process.env.BOT_NAME || 'viralapp_official_bot';
+        const referralLink = `https://t.me/${botName}?start=ref_${userId}`;
+        const shareCaption = `🎬 Смотри, какой вирусный ролик я сгенерировал в ViralApp! 🔥\n\nЗабирай бесплатную попытку по моей ссылке и сделай своё видео за 60 секунд:\n🚀 ${referralLink}`;
+        const shareKeyboard = {
+            inline_keyboard: [
+                [{ text: '⚡ Создать своё видео', url: referralLink }]
+            ]
+        };
         
         console.log(`🔍 Inline query from user ${userId}, query: "${query}"`);
         
@@ -1400,23 +1418,29 @@ bot.on('inline_query', async (ctx) => {
         
         // Если есть query (ID генерации), ищем конкретное видео
         if (query) {
-            targetVideo = generations.find(g => g.generationId === query && g.status === 'done' && g.videoUrl);
+            targetVideo = generations.find(g => g.generationId === query && g.status === 'done' && (g.telegramFileId || g.videoUrl));
+            if (!targetVideo) {
+                const gen = await generationService.getGeneration(query);
+                if (gen && gen.status === 'done' && (gen.telegramFileId || gen.videoUrl)) {
+                    targetVideo = gen;
+                }
+            }
             console.log(`🎯 Looking for specific video: ${query}`);
         }
         
         // Если не нашли конкретное видео или query пустой, берем последнее
         if (!targetVideo) {
-            targetVideo = generations.find(g => g.status === 'done' && g.videoUrl);
+            targetVideo = generations.find(g => g.status === 'done' && (g.telegramFileId || g.videoUrl));
             console.log(`📹 Using last video as fallback`);
         }
         
         if (!targetVideo) {
             console.log('❌ No completed video found for inline query');
-            // Отправляем пустой результат с сообщением
+            // Отправляем пустой результат с сообщением и реферальной ссылкой
             return await ctx.answerInlineQuery([], {
                 cache_time: 0,
-                switch_pm_text: 'Создать видео',
-                switch_pm_parameter: 'create'
+                switch_pm_text: '⚡ Создать своё видео',
+                switch_pm_parameter: `ref_${userId}`
             });
         }
         
@@ -1433,14 +1457,10 @@ bot.on('inline_query', async (ctx) => {
                 type: 'video',
                 id: targetVideo.generationId,
                 video_file_id: targetVideo.telegramFileId,
-                title: `🎬 ${targetVideo.memeName}`,
-                description: `Видео с именем: ${targetVideo.name}`,
-                caption: `🎬 Смотри какое крутое видео я создал в @${process.env.BOT_NAME}!\n\n✨ Ты тоже можешь создать своё!`,
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🎬 Создать своё видео', url: `https://t.me/${process.env.BOT_NAME}` }]
-                    ]
-                }
+                title: `🎬 ${targetVideo.memeName || 'Вирусный ролик'}`,
+                description: 'Забирай бесплатную попытку и сделай своё видео!',
+                caption: shareCaption,
+                reply_markup: shareKeyboard
             });
         } else {
             // Fallback на URL (без водяного знака)
@@ -1450,14 +1470,10 @@ bot.on('inline_query', async (ctx) => {
                 video_url: targetVideo.videoUrl,
                 mime_type: 'video/mp4',
                 thumb_url: targetVideo.videoUrl,
-                title: `🎬 ${targetVideo.memeName}`,
-                description: `Видео с именем: ${targetVideo.name}`,
-                caption: `🎬 Смотри какое крутое видео я создал в @${process.env.BOT_NAME}!\n\n✨ Ты тоже можешь создать своё!`,
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🎬 Создать своё видео', url: `https://t.me/${process.env.BOT_NAME}` }]
-                    ]
-                }
+                title: `🎬 ${targetVideo.memeName || 'Вирусный ролик'}`,
+                description: 'Забирай бесплатную попытку и сделай своё видео!',
+                caption: shareCaption,
+                reply_markup: shareKeyboard
             });
         }
         
@@ -1467,10 +1483,11 @@ bot.on('inline_query', async (ctx) => {
     } catch (err) {
         console.error('❌ Error in inline_query:', err);
         console.error(err.stack);
+        const userId = ctx.from?.id || '';
         await ctx.answerInlineQuery([], {
             cache_time: 0,
-            switch_pm_text: 'Создать видео',
-            switch_pm_parameter: 'create'
+            switch_pm_text: '⚡ Создать своё видео',
+            switch_pm_parameter: `ref_${userId}`
         });
     }
 });
@@ -1491,6 +1508,7 @@ bot.action(/select_package_(.+)/, (ctx) => {
 bot.action('about', (ctx) => paymentController.handleAbout(ctx));
 
 // Обработка личного кабинета
+bot.command('profile', (ctx) => paymentController.handleProfile(ctx));
 bot.action('profile', (ctx) => paymentController.handleProfile(ctx));
 bot.action('profile_history', (ctx) => paymentController.handleProfileHistory(ctx));
 bot.action(/^profile_history:(\d+)$/, (ctx) => paymentController.handleProfileHistory(ctx));
@@ -1501,6 +1519,10 @@ bot.action('ref_user', (ctx) => paymentController.handleRefUser(ctx));
 bot.action('ref_expert', (ctx) => paymentController.handleRefExpert(ctx));
 
 // Обработка оплаты
+bot.action(/pay_card_oneclick_(.+)/, (ctx) => {
+    const packageKey = ctx.match[1];
+    paymentController.handlePayCardOneClick(ctx, packageKey);
+});
 bot.action(/pay_card_(.+)/, (ctx) => {
     const packageKey = ctx.match[1];
     paymentController.handlePayCard(ctx, packageKey);

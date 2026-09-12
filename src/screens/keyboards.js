@@ -72,12 +72,15 @@ export function createChainKeyboard(crypto, chains, packageKey = 'single') {
     return { inline_keyboard: buttons };
 }
 
-// Генерация клавиатуры для оплаты криптой (не используется, логика в paymentController)
-export function createPaymentCryptoKeyboard(orderId, packageKey = 'single') {
+// Генерация клавиатуры для оплаты криптой
+export function createPaymentCryptoKeyboard(orderId, packageKey = 'single', paymentUrl = null) {
     const buttons = [];
     
-    buttons.push([{ text: '🔄 Проверка платежа', callback_data: `check_payment_${orderId}` }]);
-    buttons.push([{ text: '⏪ Вернуться назад', callback_data: `select_package_${packageKey}` }]);
+    if (paymentUrl) {
+        buttons.push([{ text: '🌐 Страница оплаты (QR / Ссылка)', url: paymentUrl }]);
+    }
+    buttons.push([{ text: '🔄 Проверить оплату', callback_data: `check_payment_${orderId}` }]);
+    buttons.push([{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]);
     
     return {
         inline_keyboard: buttons
@@ -123,12 +126,41 @@ export async function createMainMenuKeyboard(userId) {
         }]);
     }
     
-    // Остальные кнопки показываем всегда
+    // Кнопки личного кабинета и подарка за подписку на соцсети
     buttons.push(
         [{ text: '👤 Личный кабинет', callback_data: 'profile' }],
-        [{ text: 'ℹ️ О проекте', callback_data: 'about' }],
-        [{ text: '🎁 Приведи друга', callback_data: 'referral' }]
+        [{ text: '🎁 Подписывайся за подарок!', callback_data: 'social_gift' }]
     );
+    
+    return { inline_keyboard: buttons };
+}
+
+// Генерация клавиатуры личного кабинета (TASK-07)
+export function createProfileKeyboard(user) {
+    const freeQuota = user?.free_quota || 0;
+    const buttons = [];
+    
+    // Кнопка «🎁 Бесплатная генерация» (если free > 0)
+    if (freeQuota > 0) {
+        buttons.push([{
+            text: '🎁 Бесплатная генерация',
+            callback_data: 'create_video_free'
+        }]);
+    }
+    
+    // «💳 Купить видео», «📜 История генераций», «🔙 Главное меню»
+    buttons.push([{
+        text: '💳 Купить видео',
+        callback_data: 'buy'
+    }]);
+    buttons.push([{
+        text: '📜 История генераций',
+        callback_data: 'profile_history'
+    }]);
+    buttons.push([{
+        text: '🔙 Главное меню',
+        callback_data: 'main_menu'
+    }]);
     
     return { inline_keyboard: buttons };
 }

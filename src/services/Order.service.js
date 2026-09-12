@@ -96,6 +96,7 @@ export class OrderService {
         const usdtOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('USDT'));
         const usdcOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('USDC'));
         const tonOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('TON'));
+        const bnbOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('BNB'));
         
         const stats = {
             total: orders.length,
@@ -106,13 +107,15 @@ export class OrderService {
             totalRevenue: paidOrders.reduce((sum, o) => sum + (o.amount || 0), 0),
             // Детальная статистика по валютам
             cryptoRevenue: {
-                usdt: usdtOrders.reduce((sum, o) => sum + (o.cryptoAmount || 0), 0),
-                usdc: usdcOrders.reduce((sum, o) => sum + (o.cryptoAmount || 0), 0),
-                ton: tonOrders.reduce((sum, o) => sum + (o.cryptoAmount || 0), 0),
+                usdt: usdtOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
+                usdc: usdcOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
+                ton: tonOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
+                bnb: bnbOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
                 count: {
                     usdt: usdtOrders.length,
                     usdc: usdcOrders.length,
-                    ton: tonOrders.length
+                    ton: tonOrders.length,
+                    bnb: bnbOrders.length
                 }
             },
             fiatRevenue: fiatOrders.reduce((sum, o) => sum + (o.amount || 0), 0)

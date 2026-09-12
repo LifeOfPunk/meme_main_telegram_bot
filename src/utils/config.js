@@ -118,14 +118,12 @@ export const MESSAGES = {
         message += `📝 Имя: ${user.firstName || 'не указано'}\n\n`;
         
         // Баланс генераций
-        const usedFree = user.used_free_quota || 0;
-        const usedPaid = user.used_paid_quota || 0;
         const availableFree = user.free_quota || 0;
         const availablePaid = user.paid_quota || 0;
         
-        message += `🎬 Баланс генераций:\n`;
-        message += `├─ 🎁 Доступно бесплатных: ${availableFree}\n`;
-        message += `└─ 💎 Доступно платных: ${availablePaid}\n\n`;
+        message += `📊 Баланс генераций:\n`;
+        message += `🎁 Бесплатные генерации: ${availableFree}\n`;
+        message += `💎 Платные генерации: ${availablePaid}\n\n`;
         
         // Добавляем реферальную статистику
         if (referralStats) {

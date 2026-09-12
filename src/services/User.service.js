@@ -1,5 +1,6 @@
 import redis from '../redis.js';
 import { FREE_QUOTA_PER_USER } from '../config.js';
+import { REDIS_KEYS } from '../config/redisKeys.js';
 
 export class UserService {
     // Создание нового пользователя
@@ -200,5 +201,88 @@ export class UserService {
     async getUserByEmail(email) {
         const userId = await redis.get(`user_email:${email}`);
         return userId ? await this.getUser(userId) : null;
+    }
+
+    // Проверка, забирал ли пользователь подарок за подписку на соцсети
+    async hasClaimedSocialGift(userId) {
+        const claimedKey = REDIS_KEYS.SOCIAL_GIFT_CLAIMED(userId);
+        const claimed = await redis.get(claimedKey);
+        if (claimed) return true;
+
+        const user = await this.getUser(userId);
+        return !!(user && user.claimed_social_gift_at);
+    }
+
+    // Сохранение лид-данных соцсетей
+    async saveSocialLead(userId, leadData) {
+        const lead = {
+            telegram_id: userId,
+            username: leadData.username || null,
+            first_name: leadData.first_name || null,
+            instagram_handle: leadData.instagram_handle || null,
+            youtube_handle: leadData.youtube_handle || null,
+            tiktok_handle: leadData.tiktok_handle || null,
+            claimed_gift_at: new Date().toISOString()
+        };
+
+        const leadKey = REDIS_KEYS.SOCIAL_LEAD(userId);
+        await redis.set(leadKey, JSON.stringify(lead));
+        await redis.sadd(REDIS_KEYS.ALL_SOCIAL_LEADS, userId);
+
+        await this.updateUser(userId, {
+            social_lead: lead,
+            claimed_social_gift_at: lead.claimed_gift_at
+        });
+
+        console.log(`📋 Saved social lead for user ${userId}: IG=${lead.instagram_handle || 'N/A'}, YT=${lead.youtube_handle || 'N/A'}`);
+        return lead;
+    }
+
+    // Начисление подарка за подписку с защитой от повторного сбора
+    async claimSocialGift(userId, leadData, bonusGenerations = 1) {
+        const alreadyClaimed = await this.hasClaimedSocialGift(userId);
+        if (alreadyClaimed) {
+            console.log(`⚠️ User ${userId} already claimed social gift, blocking duplicate`);
+            return { success: false, alreadyClaimed: true };
+        }
+
+        // Устанавливаем флаг получения подарка
+        const claimedKey = REDIS_KEYS.SOCIAL_GIFT_CLAIMED(userId);
+        await redis.set(claimedKey, new Date().toISOString());
+
+        // Сохраняем лид-данные
+        const lead = await this.saveSocialLead(userId, leadData);
+
+        // Начисляем бонусные генерации
+        await this.addFreeQuota(userId, bonusGenerations);
+        console.log(`🎁 User ${userId} granted ${bonusGenerations} bonus generation(s) for social subscription`);
+
+        return {
+            success: true,
+            bonusGenerations,
+            lead
+        };
+    }
+
+    // Получение сохраненного соц-лида
+    async getSocialLead(userId) {
+        const leadKey = REDIS_KEYS.SOCIAL_LEAD(userId);
+        const data = await redis.get(leadKey);
+        return data ? JSON.parse(data) : null;
+    }
+
+    // Получение всех сохраненных соц-лидов (для экспорта и админ-панели)
+    async getAllSocialLeads() {
+        const userIds = await redis.smembers(REDIS_KEYS.ALL_SOCIAL_LEADS);
+        const leads = [];
+        for (const userId of userIds) {
+            const numericId = typeof userId === 'string' ? parseInt(userId) : userId;
+            const lead = await this.getSocialLead(numericId);
+            if (lead) {
+                leads.push(lead);
+            }
+        }
+        console.log(`📊 getAllSocialLeads: found ${leads.length} leads from ${userIds.length} entries`);
+        return leads;
     }
 }
