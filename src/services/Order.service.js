@@ -109,10 +109,11 @@ export class OrderService {
     }
 
     // Отметка заказа как оплаченного
-    async markAsPaid(orderId) {
+    async markAsPaid(orderId, extraData = {}) {
         return await this.updateOrder(orderId, { 
             isPaid: true, 
-            paidAt: new Date().toISOString() 
+            paidAt: new Date().toISOString(),
+            ...extraData
         });
     }
 

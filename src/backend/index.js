@@ -285,7 +285,10 @@ app.post('/webhook/crypto', async (req, res) => {
             const depositAmount = amountUSD > 0 ? amountUSD : Number(order.amount || 2.0);
             console.log(`📊 Order details: userId=${order.userId}, package=${order.package}, amount=${depositAmount}`);
 
-            await orderService.markAsPaid(effectiveOrderId);
+            await orderService.markAsPaid(effectiveOrderId, {
+                paidAmount: depositAmount,
+                status: 'success'
+            });
 
             const pkg = PACKAGES[order.package];
             if (pkg) {

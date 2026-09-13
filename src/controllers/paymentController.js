@@ -369,7 +369,10 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposi
         const userId = ctx.from.id;
         const payCurrency = chain.replace(/_/g, ' ');
         const pkg = PACKAGES[packageKey];
-        const targetAmount = pkg ? pkg.usdt : 0.50;
+        let targetAmount = pkg ? pkg.usdt : 2.00;
+        if (!pkg && payCurrency.includes('BNB')) {
+            targetAmount = 4.00;
+        }
         
         console.log('💰 Payment params prepared:');
         console.log(`  - userId: ${userId}`);
@@ -580,8 +583,14 @@ export async function handleCheckPayment(ctx, orderId) {
         if (result.status === 'paid') {
             console.log(`✅ Payment confirmed for order: ${orderId}`);
             
+            // Зачисляем фактически поступившую сумму 1 к 1 на баланс USDT (TASK-02-03)
+            const depositAmount = Number(result.amount || order.amount || 2.0);
+
             // Отмечаем заказ как оплаченный
-            await orderService.markAsPaid(orderId);
+            await orderService.markAsPaid(orderId, {
+                paidAmount: depositAmount,
+                status: 'paid'
+            });
             
             // Если выбран фиксированный пакет - начисляем генерации
             const pkg = PACKAGES[order.package];
@@ -589,8 +598,6 @@ export async function handleCheckPayment(ctx, orderId) {
                 await userService.addPaidQuota(order.userId, pkg.generations);
             }
             
-            // Зачисляем фактически поступившую сумму 1 к 1 на баланс USDT (TASK-02-03)
-            const depositAmount = Number(result.amount || order.amount || 2.0);
             await userService.addWalletBalance(order.userId, depositAmount);
             
             // Обрабатываем кешбэк
@@ -718,8 +725,8 @@ export async function handleReferral(ctx) {
         const rawCashback = user?.totalCashback ?? stats?.totalCashback ?? user?.affiliate_earnings ?? 0;
         message += `💰 Заработано: ${Number(rawCashback || 0).toFixed(2)} USDT`;
         
-        const inviteText = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:\n🚀 ${refLink}`;
-        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent('🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:')}`;
+        const inviteText = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик: ${refLink}`;
+        const shareUrl = `https://t.me/share/url?text=${encodeURIComponent(inviteText)}`;
         
         const keyboard = {
             inline_keyboard: [
@@ -952,8 +959,9 @@ export async function handleProfileTransactions(ctx) {
             const date = rawDate
                 ? new Date(rawDate).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })
                 : '—';
-            const amount = ord.isFiat ? `${ord.amount}₽` : `${ord.amount} USDT`;
-            const pkgTitle = PACKAGES[ord.package]?.title || ord.package || 'Пополнение';
+            const displayAmount = ord.paidAmount || ord.input?.amountUSD || ord.amount || 0;
+            const amount = ord.isFiat ? `${ord.amount}₽` : `${Number(displayAmount).toFixed(2)} USDT`;
+            const pkgTitle = ord.package === 'deposit' ? 'Пополнение баланса' : (PACKAGES[ord.package]?.title || ord.package || 'Пополнение');
             const globalIdx = startIdx + idx + 1;
             const payType = ord.isFiat ? 'Банковская карта (Lava)' : `Крипта (${ord.currency || 'USDT'})`;
 
