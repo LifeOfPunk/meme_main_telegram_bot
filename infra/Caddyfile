@@ -11,8 +11,16 @@ aiviral.agency, www.aiviral.agency {
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
-    handle /webhook/* {
+    handle /webhook/staging/* {
         reverse_proxy viralapp-staging-backend:3005
+    }
+
+    handle /staging/webhook/* {
+        reverse_proxy viralapp-staging-backend:3005
+    }
+
+    handle /webhook/* {
+        reverse_proxy viralapp-backend:3005
     }
 
     handle {

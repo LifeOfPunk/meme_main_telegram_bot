@@ -45,7 +45,7 @@ function verifyLavaSignature(data, signature) {
 }
 
 // Webhook для Lava (фиат платежи)
-app.post('/webhook/lava', async (req, res) => {
+app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], async (req, res) => {
     try {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('📥 Lava webhook received at:', new Date().toISOString());
@@ -221,7 +221,7 @@ if (USE_WEBHOOK && bot) {
 }
 
 // Webhook для 0xprocessing (крипто платежи)
-app.post('/webhook/crypto', async (req, res) => {
+app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto'], async (req, res) => {
     try {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('📥 Crypto webhook received at:', new Date().toISOString());
@@ -236,7 +236,7 @@ app.post('/webhook/crypto', async (req, res) => {
         const clientId = req.body.clientId || req.body.ClientId || req.body.userId || req.body.UserId;
         const email = req.body.email || req.body.Email;
         const address = req.body.address || req.body.Address || req.body.wallet;
-        const amountUSD = Number(req.body.AmountUSD || req.body.amountUSD || req.body.Amount || req.body.amount || req.body.TotalAmount || req.body.TotalAmountUSD || 0);
+        const amountUSD = Number(req.body.TotalAmountUSD || req.body.totalAmountUSD || req.body.TotalAmount || req.body.totalAmount || req.body.AmountUSD || req.body.amountUSD || req.body.Amount || req.body.amount || 0);
 
         console.log(`🔍 Extracted fields: billingID=${billingID}, status=${status}, paymentId=${paymentId}, clientId=${clientId}, email=${email}, address=${address}, amountUSD=${amountUSD}`);
 
