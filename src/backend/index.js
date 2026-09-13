@@ -63,6 +63,22 @@ app.post('/webhook/lava', async (req, res) => {
 
         console.log(`📊 Extracted: eventType=${eventType}, status=${status}, email=${email}, invoiceId=${invoiceId}, orderId=${orderId}`);
 
+        // Проверка Basic Auth от Lava (если настроены учетные данные)
+        const authHeader = req.headers['authorization'];
+        if (process.env.LAVA_WEBHOOK_USER && process.env.LAVA_WEBHOOK_PASSWORD) {
+            if (!authHeader || !authHeader.startsWith('Basic ')) {
+                console.error('❌ Missing or invalid Authorization header in Lava webhook');
+                return res.status(401).json({ error: 'Unauthorized: missing basic auth' });
+            }
+            const credentials = Buffer.from(authHeader.split(' ')[1], 'base64').toString('utf-8');
+            const [user, pass] = credentials.split(':');
+            if (user !== process.env.LAVA_WEBHOOK_USER || pass !== process.env.LAVA_WEBHOOK_PASSWORD) {
+                console.error('❌ Invalid Basic Auth credentials in Lava webhook');
+                return res.status(401).json({ error: 'Unauthorized: invalid credentials' });
+            }
+            console.log('🔐 Lava Basic Auth verified successfully');
+        }
+
         // Проверка подписи (если используется и настроен секрет)
         const signature = req.headers['x-signature'] || req.headers['x-lava-signature'] || req.headers['signature'];
         if (signature && process.env.WEBHOOK_PASSWORD_PROCESSING) {
