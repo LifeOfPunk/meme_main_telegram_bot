@@ -52,12 +52,15 @@ export class PaymentCryptoService {
             const currencyForProcessing = payCurrency === 'BNB (BEP20)' ? 'BNB' : payCurrency;
 
             // Данные для 0xProcessing (БЕЗ amount - он рассчитается на их стороне)
+            const webhookUrl = process.env.CRYPTO_WEBHOOK_URL || 'https://aiviral.agency/webhook/crypto';
             const data = {
                 merchantID: this.merchant,
                 billingID: orderId,
                 currency: currencyForProcessing,
                 email: `user${userId}@viralapp.bot`,
-                clientId: userId.toString()
+                clientId: userId.toString(),
+                webhookUrl: webhookUrl,
+                callbackUrl: webhookUrl
             };
 
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
