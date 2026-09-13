@@ -132,6 +132,12 @@ export class UserService {
         return true;
     }
 
+    // Получить баланс кошелька в USDT (TASK-15)
+    async getUserWalletBalance(userId) {
+        const user = await this.getUser(userId);
+        return Number(user?.wallet_balance_usdt ?? user?.wallet_balance ?? 0);
+    }
+
     // Роутер списания за генерацию видео (TASK-15)
     // 1. Если free_quota > 0 -> расходовать бесплатную квоту.
     // 2. Если paid_quota > 0 или wallet_balance_usdt >= GENERATION_COST_USDT (1.30 USDT) -> расходовать платную квоту / баланс.
