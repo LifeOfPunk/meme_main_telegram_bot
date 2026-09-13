@@ -1,5 +1,8 @@
+import https from 'https';
 import axios from 'axios';
 import redis from '../redis.js';
+
+const httpsAgent = new https.Agent({ family: 4 });
 
 export class CurrencyService {
     constructor() {
@@ -22,7 +25,7 @@ export class CurrencyService {
             }
 
             console.log('📡 Fetching official CBR USD rate from API...');
-            const response = await axios.get('https://www.cbr-xml-daily.ru/daily_json.js', { timeout: 5000 });
+            const response = await axios.get('https://www.cbr-xml-daily.ru/daily_json.js', { httpsAgent, timeout: 5000 });
             const valute = response.data?.Valute?.USD;
             if (valute && valute.Value) {
                 const rate = parseFloat(valute.Value);
