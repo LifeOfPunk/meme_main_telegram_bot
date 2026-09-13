@@ -260,8 +260,9 @@ app.post('/webhook/crypto', async (req, res) => {
         }
 
         if (!order) {
-            console.error('❌ Crypto order not found for params:', { billingID, paymentId, clientId, email, address });
-            return res.status(404).json({ error: 'Order not found' });
+            console.warn('⚠️ Crypto order not found for params:', { billingID, paymentId, clientId, email, address });
+            // Возвращаем 200 OK, чтобы 0xProcessing не долбил ретраями и не слал алерты
+            return res.status(200).json({ success: true, message: 'Order not found or canceled, acknowledged' });
         }
 
         const effectiveOrderId = order.orderId;
