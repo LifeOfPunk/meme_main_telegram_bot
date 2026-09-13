@@ -164,37 +164,31 @@ export function createProfileKeyboard(user, referralStats = null) {
         }]);
     }
 
-    // 2. [❓ Инструкция] -> https://aiviral.agency/kak-pisat-promty/
-    buttons.push([{
-        text: '❓ Инструкция',
-        url: 'https://aiviral.agency/kak-pisat-promty/'
-    }]);
-
-    // 3. [💳 История транзакций]
+    // 1. [💳 История транзакций]
     buttons.push([{
         text: '💳 История транзакций',
         callback_data: 'profile_transactions'
     }]);
 
-    // 4. [📜 История генераций]
+    // 2. [💬 Поддержка проекта] -> https://t.me/aiviral_main
     buttons.push([{
-        text: '📜 История генераций',
-        callback_data: 'profile_history'
-    }]);
-
-    // 5. [💬 Поддержка] -> https://t.me/aiviral_main
-    buttons.push([{
-        text: '💬 Поддержка',
+        text: '💬 Поддержка проекта',
         url: 'https://t.me/aiviral_main'
     }]);
 
-    // 6. [ℹ️ О проекте] -> открывает экран о проекте
+    // 3. [❓ Инструкция] -> https://aiviral.agency/kak-pisat-promty/
+    buttons.push([{
+        text: '❓ Инструкция',
+        url: 'https://aiviral.agency/kak-pisat-promty/'
+    }]);
+
+    // 4. [ℹ️ О проекте] -> открывает экран о проекте
     buttons.push([{
         text: 'ℹ️ О проекте',
         callback_data: 'about'
     }]);
 
-    // 7. [🔙 Главное меню]
+    // 5. [🔙 Главное меню]
     buttons.push([{
         text: '🔙 Главное меню',
         callback_data: 'main_menu'

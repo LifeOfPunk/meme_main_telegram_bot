@@ -221,7 +221,8 @@ export class PaymentCryptoService {
                 package: pkg,
                 amount: numAmount,
                 cryptoAmount: amountInCrypto,
-                currency: payCurrency
+                currency: payCurrency,
+                createdAt: data.createdAt || new Date().toISOString()
             };
 
             console.log('💾 Saving order to database...');

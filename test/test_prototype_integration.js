@@ -1,12 +1,12 @@
 import assert from 'node:assert';
 import { createMainMenuKeyboard, createProfileKeyboard } from '../src/screens/keyboards.js';
-import { getMainMenuText, MESSAGES, PACKAGES } from '../src/config.js';
+import { getMainMenuText, MESSAGES, PACKAGES, NO_BALANCE_KEYBOARD } from '../src/config.js';
 import { loadAllMemes, getMemeById } from '../src/utils/memeLoader.js';
 
 console.log('🧪 Testing Prototype Integration Parity...\n');
 
 // 1. Keyboard tests
-console.log('1️⃣ Main Menu Keyboard Structure');
+console.log('1️⃣ Main Menu & No-Balance Keyboard Structure');
 const kbNoFree = await createMainMenuKeyboard({ free_quota: 0 });
 const rowsNoFree = kbNoFree.inline_keyboard;
 assert.strictEqual(rowsNoFree[0][0].text, '🎬 Создать видео');
@@ -18,6 +18,10 @@ assert.strictEqual(rowsNoFree[2][0].callback_data, 'profile');
 assert.strictEqual(rowsNoFree[3][0].text, '🤝 Реферальная программа');
 assert.strictEqual(rowsNoFree[3][0].callback_data, 'referral');
 console.log('   ✅ 4-row keyboard without free quota verified');
+
+assert.strictEqual(NO_BALANCE_KEYBOARD.inline_keyboard[0][0].callback_data, 'pay_crypto_deposit', 'Crypto button must be first in NO_BALANCE_KEYBOARD');
+assert.strictEqual(NO_BALANCE_KEYBOARD.inline_keyboard[1][0].callback_data, 'pay_card_packages', 'Card button must be second in NO_BALANCE_KEYBOARD');
+console.log('   ✅ NO_BALANCE_KEYBOARD: Crypto first, Card second verified');
 
 const kbWithFree = await createMainMenuKeyboard({ free_quota: 3 });
 const rowsWithFree = kbWithFree.inline_keyboard;
@@ -34,8 +38,13 @@ console.log('\n2️⃣ Profile Keyboard Structure');
 const profileKbZero = createProfileKeyboard({ totalCashback: 0 });
 const profileRowsZero = profileKbZero.inline_keyboard;
 assert(!profileRowsZero.some(row => row.some(btn => btn.text.includes('Вывести'))), 'Should not show withdraw button if cashback is 0');
-assert(profileRowsZero.some(row => row.some(btn => btn.text.includes('Инструкция'))), 'Should show instruction button in profile');
-assert(profileRowsZero.some(row => row.some(btn => btn.text.includes('История транзакций'))), 'Should show transaction history in profile');
+assert(!profileRowsZero.some(row => row.some(btn => btn.text.includes('История генераций'))), 'Should hide history of generations button');
+assert.strictEqual(profileRowsZero[0][0].text, '💳 История транзакций');
+assert.strictEqual(profileRowsZero[1][0].text, '💬 Поддержка проекта');
+assert.strictEqual(profileRowsZero[2][0].text, '❓ Инструкция');
+assert.strictEqual(profileRowsZero[3][0].text, 'ℹ️ О проекте');
+assert.strictEqual(profileRowsZero[4][0].text, '🔙 Главное меню');
+console.log('   ✅ Profile keyboard order: Transactions -> Support -> Guide -> About -> Main Menu verified');
 
 const profileKbWithCashback = createProfileKeyboard({ totalCashback: 15.5 });
 const profileRowsWithCashback = profileKbWithCashback.inline_keyboard;
@@ -81,7 +90,8 @@ assert(cardConfirmMsg.includes('🎬 <b>Стоимость генерации:</
 assert(cardConfirmMsg.includes('💎 <b>Количество генераций:</b> 4 видео'));
 assert(cardConfirmMsg.includes('https://aiviral.agency/dogovor-oferta/'));
 assert(cardConfirmMsg.includes('https://aiviral.agency/politika-konfidencialnosti/'));
-console.log('   ✅ Payment packages & legal URLs verified');
+assert(MESSAGES.ABOUT.includes('3. Обязательно сохраняй готовое видео на телефон'));
+console.log('   ✅ Payment packages & legal URLs & About copy verified');
 
 // 6. Meme catalog & media metadata
 console.log('\n6️⃣ Meme Catalog & Media Metadata');

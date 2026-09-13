@@ -341,6 +341,11 @@ app.post('/webhook/crypto', async (req, res) => {
             return res.status(200).json({ success: true, message: 'Payment processed' });
         } else {
             console.log('ℹ️ Crypto payment status (not success):', status);
+            const isCanceled = status && (status.toLowerCase() === 'canceled' || status.toLowerCase() === 'cancelled');
+            if (isCanceled && effectiveOrderId) {
+                await orderService.updateOrder(effectiveOrderId, { status: 'canceled' });
+                console.log(`❌ Order ${effectiveOrderId} marked as canceled`);
+            }
             return res.status(200).json({ success: true, message: 'Status noted' });
         }
     } catch (err) {

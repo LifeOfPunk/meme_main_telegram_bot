@@ -1491,7 +1491,7 @@ bot.on('inline_query', async (ctx) => {
         const query = ctx.inlineQuery.query.trim();
         const botName = process.env.BOT_NAME || 'viralapp_official_bot';
         const referralLink = `https://t.me/${botName}?start=ref_${userId}`;
-        const shareCaption = `🎬 Смотри, какой вирусный ролик я сгенерировал в ViralApp! 🔥\n\nЗабирай бесплатную попытку по моей ссылке и сделай своё видео за 60 секунд:\n🚀 ${referralLink}`;
+        const shareCaption = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:\n🚀 ${referralLink}`;
         const shareKeyboard = {
             inline_keyboard: [
                 [{ text: '⚡ Создать своё видео', url: referralLink }]
