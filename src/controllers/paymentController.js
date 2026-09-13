@@ -1,4 +1,4 @@
-import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_TYPE_KEYBOARD, ABOUT_KEYBOARD } from '../config.js';
+import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_TYPE_KEYBOARD, ABOUT_KEYBOARD, GENERATION_COST_USDT } from '../config.js';
 import { createCryptoKeyboard, createChainKeyboard, createPaymentCryptoKeyboard, createAfterPaymentKeyboard, createMainMenuKeyboard, createProfileKeyboard } from '../screens/keyboards.js';
 import { PaymentCryptoService } from '../services/PaymentCrypto.service.js';
 import { PaymentFiatService } from '../services/PaymentFiat.service.js';
@@ -6,6 +6,7 @@ import { UserService } from '../services/User.service.js';
 import { OrderService } from '../services/Order.service.js';
 import { ReferralService } from '../services/Referral.service.js';
 import { GenerationService } from '../services/Generation.service.js';
+import { currencyService } from '../services/Currency.service.js';
 
 const paymentCryptoService = new PaymentCryptoService();
 const paymentFiatService = new PaymentFiatService();
@@ -40,8 +41,8 @@ export async function handleBuy(ctx) {
         
         const keyboard = {
             inline_keyboard: [
-                [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
                 [{ text: '💎 Криптовалюта', callback_data: 'pay_crypto_deposit' }],
+                [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
                 [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
             ]
         };
@@ -209,7 +210,18 @@ export async function handlePayCard(ctx, packageKey = 'pack_10') {
         
         const paymentUrl = payment.output?.paymentUrl || payment.output?.payUrl || payment.output?.url || (payment.output?.id ? `https://lava.top/invoice/${payment.output.id}` : null);
         
-        const message = MESSAGES.PAYMENT_CARD_CONFIRM(pkg);
+        // Динамический пересчет рублей в доллары по ЦБ РФ и расчет количества генераций (1.30$ за видео)
+        let dynamicUsd = pkg.usdt;
+        let dynamicGenerations = pkg.generations;
+        try {
+            const conversion = await currencyService.rubToUsdFloor(pkg.rub);
+            dynamicUsd = conversion.usd;
+            dynamicGenerations = Math.floor(conversion.usd / GENERATION_COST_USDT);
+        } catch (currErr) {
+            console.warn('⚠️ Currency conversion fallback:', currErr.message);
+        }
+
+        const message = MESSAGES.PAYMENT_CARD_CONFIRM(pkg, dynamicUsd, dynamicGenerations);
         const keyboard = {
             inline_keyboard: [
                 [{ text: '💳 Оплатить картой', url: paymentUrl }],

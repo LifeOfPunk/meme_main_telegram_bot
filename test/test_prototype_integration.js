@@ -75,7 +75,10 @@ console.log('   ✅ Profile text has USDT balance, video cost and referral withd
 console.log('\n5️⃣ Packages & Card Payment Links');
 assert(PACKAGES.pack_10.rub === 500);
 assert(PACKAGES.pack_10.generations === 10);
-const cardConfirmMsg = MESSAGES.PAYMENT_CARD_CONFIRM(PACKAGES.pack_10);
+const cardConfirmMsg = MESSAGES.PAYMENT_CARD_CONFIRM(PACKAGES.pack_10, 5.90, 4);
+assert(cardConfirmMsg.includes('500₽ (~5.90$)'));
+assert(cardConfirmMsg.includes('🎬 <b>Стоимость генерации:</b> 1.30$'));
+assert(cardConfirmMsg.includes('💎 <b>Количество генераций:</b> 4 видео'));
 assert(cardConfirmMsg.includes('https://aiviral.agency/dogovor-oferta/'));
 assert(cardConfirmMsg.includes('https://aiviral.agency/politika-konfidencialnosti/'));
 console.log('   ✅ Payment packages & legal URLs verified');

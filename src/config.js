@@ -194,12 +194,16 @@ ${pkg.emoji} ${pkg.title}
 
     EMAIL_INVALID: 'Упс вы ввели не правильную почту! Введите правильно, чтобы мы могли отправить вам сообщение о оплате.',
     
-    PAYMENT_CARD_CONFIRM: (pkg) => `💳 <b>Оплата банковской картой</b>\n\n` +
-        `📦 <b>Пакет:</b> ${pkg.emoji} ${pkg.title}\n` +
-        `💎 <b>Количество:</b> ${pkg.generations} видео\n` +
-        `💰 <b>Сумма к оплате:</b> <b>${pkg.rub}₽</b> ($${pkg.usdt})\n\n` +
-        `Проводя оплату, вы соглашаетесь с <a href="https://aiviral.agency/dogovor-oferta/">Договором-офертой</a> и <a href="https://aiviral.agency/politika-konfidencialnosti/">Политикой конфиденциальности</a>.\n\n` +
-        `👇 Нажмите кнопку «Оплатить картой» для перехода на защищенную страницу оплаты:`,
+    PAYMENT_CARD_CONFIRM: (pkg, dynamicUsd = null, dynamicGenerations = null) => {
+        const usdFormatted = dynamicUsd ? Number(dynamicUsd).toFixed(2) : Number(pkg.usdt).toFixed(2);
+        const gensCount = dynamicGenerations !== null ? dynamicGenerations : Math.floor(Number(usdFormatted) / GENERATION_COST_USDT);
+        return `💳 <b>Оплата банковской картой</b>\n\n` +
+            `💰 <b>Сумма к оплате:</b> ${pkg.rub}₽ (~${usdFormatted}$)\n` +
+            `🎬 <b>Стоимость генерации:</b> ${GENERATION_COST_USDT.toFixed(2)}$\n` +
+            `💎 <b>Количество генераций:</b> ${gensCount} видео\n\n` +
+            `Проводя оплату, вы соглашаетесь с <a href="https://aiviral.agency/dogovor-oferta/">Договором-офертой</a> и <a href="https://aiviral.agency/politika-konfidencialnosti/">Политикой конфиденциальности</a>.\n\n` +
+            `👇 Нажмите кнопку «Оплатить картой» для перехода на защищенную страницу оплаты:`;
+    },
 
     PAYMENT_CRYPTO_SELECT: (pkg) => `💎 Оплата криптовалютой
 
