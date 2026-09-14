@@ -1,4 +1,4 @@
-import redis from '../redis.js';
+import redis, { stagingRedis } from '../redis.js';
 import { FREE_QUOTA_PER_USER, GENERATION_COST_USDT } from '../config.js';
 import { REDIS_KEYS } from '../config/redisKeys.js';
 
@@ -36,6 +36,19 @@ export class UserService {
             await redis.set(`user:${userId}`, JSON.stringify(newUser));
             await redis.sadd('all_users', userId);
 
+            // Автодублирование создания пользователя в стейджинг
+            if (stagingRedis) {
+                try {
+                    const stagingRaw = await stagingRedis.get(`user:${userId}`);
+                    if (!stagingRaw) {
+                        await stagingRedis.set(`user:${userId}`, JSON.stringify(newUser));
+                        await stagingRedis.sadd('all_users', userId);
+                    }
+                } catch (err) {
+                    console.warn(`⚠️ Dual-write createUser to Staging Redis failed: ${err.message}`);
+                }
+            }
+
             console.log(`✅ User ${userId} created with ${FREE_QUOTA_PER_USER} free generations`);
 
             return newUser;
@@ -62,6 +75,25 @@ export class UserService {
         };
 
         await redis.set(`user:${userId}`, JSON.stringify(updatedUser));
+
+        // Автодублирование обновления пользователя в стейджинг (если подключен STAGING_REDIS_URL)
+        if (stagingRedis) {
+            try {
+                const stagingRaw = await stagingRedis.get(`user:${userId}`);
+                if (stagingRaw) {
+                    const stagingUser = JSON.parse(stagingRaw);
+                    const merged = { ...stagingUser, ...data, updatedAt: new Date().toISOString() };
+                    await stagingRedis.set(`user:${userId}`, JSON.stringify(merged));
+                } else {
+                    await stagingRedis.set(`user:${userId}`, JSON.stringify(updatedUser));
+                    await stagingRedis.sadd('all_users', userId);
+                }
+                console.log(`🔄 Dual-write user ${userId} to Staging Redis synced`);
+            } catch (err) {
+                console.warn(`⚠️ Dual-write updateUser to Staging Redis failed: ${err.message}`);
+            }
+        }
+
         return updatedUser;
     }
 
