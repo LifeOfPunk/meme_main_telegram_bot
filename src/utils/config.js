@@ -1,4 +1,5 @@
-export const ADMINS = [1323534384, 1916527652];
+const envAdmins = process.env.ADMINS ? process.env.ADMINS.split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean) : [];
+export const ADMINS = Array.from(new Set([1323534384, 1916527652, 583561687, 7937165663, ...envAdmins]));
 
 // Пакеты генераций
 export const PACKAGES = {
