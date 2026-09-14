@@ -403,9 +403,17 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposi
             return await safeAnswerCbQuery(ctx, 'Не удалось получить адрес кошелька. Попробуйте другую сеть.', { show_alert: true });
         }
         
-        const effectiveRate = payment.output?.rate ? parseFloat(payment.output.rate) : null;
+        let effectiveRate = payment.output?.rate ? parseFloat(payment.output.rate) : null;
         const isBnb = payCurrency.includes('BNB');
         const isGram = payCurrency.includes('TON') || payCurrency.includes('Gram');
+
+        if (!effectiveRate || effectiveRate <= 0) {
+            if (isGram) {
+                effectiveRate = await currencyService.getCryptoRate('TONUSDT');
+            } else if (isBnb) {
+                effectiveRate = await currencyService.getCryptoRate('BNBUSDT');
+            }
+        }
 
         let minNote = '2.00 USDT';
         let dynamicMinGram = '1.25';
@@ -503,9 +511,17 @@ export async function handleShowQrCode(ctx, orderId) {
         const address = order.output?.address || order.output?.Address || order.output?.wallet;
         const qrCode = order.output?.qrCode;
         const payCurrency = order.currency || order.input?.currency || 'USDT';
-        const effectiveRate = order.output?.rate ? parseFloat(order.output.rate) : null;
+        let effectiveRate = order.output?.rate ? parseFloat(order.output.rate) : null;
         const isBnb = payCurrency.includes('BNB');
         const isGram = payCurrency.includes('TON') || payCurrency.includes('Gram');
+
+        if (!effectiveRate || effectiveRate <= 0) {
+            if (isGram) {
+                effectiveRate = await currencyService.getCryptoRate('TONUSDT');
+            } else if (isBnb) {
+                effectiveRate = await currencyService.getCryptoRate('BNBUSDT');
+            }
+        }
 
         let minNote = '2.00 USDT';
         if (isBnb) {

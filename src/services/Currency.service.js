@@ -54,6 +54,46 @@ export class CurrencyService {
             rawUsd: rawUsd
         };
     }
+
+    // Получить курс криптовалюты к USDT с Binance с кешированием в Redis
+    async getCryptoRate(symbol = 'TONUSDT') {
+        const cleanSymbol = symbol.toUpperCase();
+        const cacheKey = `binance_rate_${cleanSymbol}`;
+        const cacheTtl = 10 * 60; // 10 минут кеша
+
+        try {
+            if (redis && redis.status === 'ready') {
+                const cachedRate = await redis.get(cacheKey);
+                if (cachedRate) {
+                    const rate = parseFloat(cachedRate);
+                    if (!isNaN(rate) && rate > 0) {
+                        return rate;
+                    }
+                }
+            }
+
+            console.log(`📡 Fetching live rate for ${cleanSymbol} from Binance API...`);
+            const response = await axios.get(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSymbol}`, {
+                httpsAgent,
+                timeout: 5000
+            });
+
+            if (response.data && response.data.price) {
+                const rate = parseFloat(response.data.price);
+                if (!isNaN(rate) && rate > 0) {
+                    if (redis && redis.status === 'ready') {
+                        await redis.set(cacheKey, rate.toString(), 'EX', cacheTtl);
+                    }
+                    console.log(`✅ Cached Binance live rate for ${cleanSymbol}: ${rate} USDT`);
+                    return rate;
+                }
+            }
+        } catch (err) {
+            console.warn(`⚠️ Failed to fetch Binance rate for ${cleanSymbol}: ${err.message}`);
+        }
+
+        return null;
+    }
 }
 
 export const currencyService = new CurrencyService();
