@@ -206,7 +206,7 @@ bot.start(async (ctx) => {
                     try {
                         await bot.telegram.sendMessage(
                             expertId,
-                            `💼 По вашей партнерской ссылке зарегистрировался новый пользователь!\n\n+${REFERRAL_BONUS} бесплатная генерация добавлена на ваш баланс!\n💰 Вы будете получать ${EXPERT_CASHBACK_PERCENT}% с каждой его оплаты!`
+                            `💼 По вашей партнерской ссылке зарегистрировался новый пользователь!\n\n+${REFERRAL_BONUS} бесплатная генерация добавлена на ваш баланс!\n💰 Вы будете получать 25% с каждой его оплаты (и 10% со 2-й линии)!`
                         );
                     } catch (notifyErr) {
                         console.log(`Failed to notify expert ${expertId}:`, notifyErr.message);
@@ -1490,7 +1490,7 @@ bot.on('inline_query', async (ctx) => {
         const userId = ctx.from.id;
         const query = ctx.inlineQuery.query.trim();
         const botName = process.env.BOT_NAME || 'viralapp_official_bot';
-        const referralLink = `https://t.me/${botName}?start=ref_${userId}`;
+        const referralLink = `https://t.me/${botName}?start=expert_${userId}`;
         const shareCaption = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:\n🚀 ${referralLink}`;
         const shareKeyboard = {
             inline_keyboard: [

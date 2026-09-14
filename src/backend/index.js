@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import bodyParser from 'body-parser';
 import crypto from 'crypto';
+import axios from 'axios';
 import { OrderService } from '../services/Order.service.js';
 import { UserService } from '../services/User.service.js';
 import { ReferralService } from '../services/Referral.service.js';
@@ -42,6 +43,69 @@ function verifyLavaSignature(data, signature) {
         .update(JSON.stringify(data) + secret)
         .digest('hex');
     return hash === signature;
+}
+
+// URL соседнего контура (стейдж -> прод или прод -> стейдж)
+const isStagingEnv = process.env.NODE_ENV === 'staging' || process.env.BOT_NAME === 'meemee_official_bot';
+const PEER_BACKEND_URL = process.env.PEER_BACKEND_URL || (isStagingEnv ? 'http://viralapp-backend:3005' : 'http://viralapp-staging-backend:3005');
+
+// Проксирование вебхука в соседний бэкенд, если заказ не найден локально
+async function forwardWebhookToPeer(req, res, peerUrl) {
+    try {
+        const targetUrl = `${peerUrl}${req.originalUrl || req.url}`;
+        console.log(`🔀 Order not found locally. Forwarding webhook to peer: ${targetUrl}`);
+        const forwardHeaders = {
+            'content-type': 'application/json',
+            'x-peer-forwarded': 'true'
+        };
+        if (req.headers['authorization']) {
+            forwardHeaders['authorization'] = req.headers['authorization'];
+        }
+        if (req.headers['x-signature']) {
+            forwardHeaders['x-signature'] = req.headers['x-signature'];
+        }
+        if (req.headers['x-lava-signature']) {
+            forwardHeaders['x-lava-signature'] = req.headers['x-lava-signature'];
+        }
+        if (req.headers['x-forwarded-for']) {
+            forwardHeaders['x-forwarded-for'] = req.headers['x-forwarded-for'];
+        }
+
+        const peerRes = await axios.post(targetUrl, req.body, {
+            headers: forwardHeaders,
+            timeout: 10000,
+            validateStatus: () => true
+        });
+
+        console.log(`🔀 Peer responded: status=${peerRes.status}`);
+        return res.status(peerRes.status).json(peerRes.data);
+    } catch (err) {
+        console.error(`⚠️ Failed to forward webhook to peer ${peerUrl}:`, err.message);
+        return res.status(200).json({ success: true, message: 'Peer forwarding failed, acknowledged' });
+    }
+}
+
+// Уведомление рефереров о начислении кешбэка
+async function notifyCashbackRecipients(botInstance, cashbackResults) {
+    if (!botInstance || !Array.isArray(cashbackResults)) return;
+    for (const item of cashbackResults) {
+        try {
+            const expertUser = await userService.getUser(item.expertId);
+            const lineText = item.level === 1 ? '1-й линии' : '2-й линии';
+            await botInstance.telegram.sendMessage(
+                item.expertId,
+                `💰 <b>Начислен партнерский кешбэк!</b>\n\n` +
+                `👤 Пользователь ${lineText} совершил пополнение.\n` +
+                `💵 Сумма: <b>${Number(item.originalAmount || 0).toFixed(2)} USDT</b>\n` +
+                `🎁 Ваш бонус (${item.percent}%): <b>+${Number(item.amount || 0).toFixed(2)} USDT</b>\n\n` +
+                `📊 Всего заработано: <b>${Number(expertUser?.totalCashback || 0).toFixed(2)} USDT</b>`,
+                { parse_mode: 'HTML' }
+            );
+            console.log(`✅ Cashback notification sent to expert ${item.expertId}`);
+        } catch (notifyErr) {
+            console.warn(`Failed to notify expert ${item.expertId}:`, notifyErr.message);
+        }
+    }
 }
 
 // Webhook для Lava (фиат платежи)
@@ -108,8 +172,11 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
         }
 
         if (!order) {
-            console.error('❌ Order not found for webhook params:', { orderId, invoiceId, email });
-            return res.status(404).json({ error: 'Order not found' });
+            console.warn('⚠️ Lava order not found locally:', { orderId, invoiceId, email });
+            if (PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
+                return await forwardWebhookToPeer(req, res, PEER_BACKEND_URL);
+            }
+            return res.status(200).json({ success: true, message: 'Order not found, acknowledged' });
         }
 
         console.log(`📦 Order found: orderId=${order.orderId}, userId=${order.userId}, package=${order.package}, isPaid=${order.isPaid}`);
@@ -157,8 +224,10 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
             // Обрабатываем кешбэк для эксперта
             try {
                 const cashbackBase = depositUsd > 0 ? depositUsd : order.amount;
-                await referralService.processExpertCashback(order.userId, cashbackBase);
-                console.log('✅ Cashback processed');
+                const cashbackResults = await referralService.processExpertCashback(order.userId, cashbackBase);
+                console.log('✅ Cashback processed:', cashbackResults);
+                const botInstance = bot || mainBot;
+                await notifyCashbackRecipients(botInstance, cashbackResults);
             } catch (cashbackErr) {
                 console.error('⚠️ Cashback processing failed:', cashbackErr.message);
             }
@@ -262,6 +331,13 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
             order = userOrders.find(o => !o.isPaid && !o.isFiat);
             if (order) console.log(`🔍 Crypto order found by user pending order: ${order.orderId}`);
         }
+        if (!order) {
+            console.warn('⚠️ Crypto order not found locally:', { billingID, paymentId, clientId, email, address });
+            if (PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
+                return await forwardWebhookToPeer(req, res, PEER_BACKEND_URL);
+            }
+        }
+
         if (!order && clientId) {
             console.log(`⚠️ Creating fallback crypto order for user ${clientId}`);
             order = {
@@ -320,8 +396,10 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
 
             // Обрабатываем кешбэк для реферала
             try {
-                await referralService.processExpertCashback(order.userId, depositAmount);
-                console.log('✅ Cashback processed');
+                const cashbackResults = await referralService.processExpertCashback(order.userId, depositAmount);
+                console.log('✅ Cashback processed:', cashbackResults);
+                const botInstance = bot || mainBot;
+                await notifyCashbackRecipients(botInstance, cashbackResults);
             } catch (cashbackErr) {
                 console.error('⚠️ Cashback processing failed:', cashbackErr.message);
             }
