@@ -99,7 +99,32 @@ async function safeAnswerCbQuery(ctx, text = undefined, options = {}) {
     }
 }
 
-// Вайтлист убран - бот доступен всем пользователям
+// Проверка доступа к Staging-боту (@meemee_official_bot)
+const isStaging = process.env.NODE_ENV === 'staging' || process.env.BOT_NAME === 'meemee_official_bot';
+const STAGING_ALLOWED_IDS = [1916527652, 7937165663];
+const STAGING_ALLOWED_USERNAMES = ['aiviral_main', 'i_prokhorovich'];
+
+bot.use(async (ctx, next) => {
+    if (isStaging) {
+        const userId = ctx.from?.id;
+        const username = (ctx.from?.username || '').toLowerCase().replace('@', '');
+        const isAllowed = STAGING_ALLOWED_IDS.includes(userId) || STAGING_ALLOWED_USERNAMES.includes(username);
+
+        if (!isAllowed) {
+            console.log(`🔒 Staging access denied for user ${userId} (@${username || 'no_username'})`);
+            if (ctx.callbackQuery) {
+                return await safeAnswerCbQuery(ctx, '🔒 Бот находится в режиме закрытого тестирования.', { show_alert: true });
+            }
+            return await ctx.reply(
+                '🔒 <b>Тестовый бот (Staging)</b>\n\n' +
+                'Этот бот находится на этапе закрытого тестирования.\n' +
+                'Доступ разрешен только разработчикам.',
+                { parse_mode: 'HTML' }
+            );
+        }
+    }
+    return await next();
+});
 
 // Middleware для обновления username
 bot.use(async (ctx, next) => {
