@@ -46,6 +46,34 @@ function verifyLavaSignature(data, signature) {
     return hash === signature;
 }
 
+// P0-01: проверка подписи 0xProcessing (fail-closed).
+// TODO(Rick): подтвердить точную схему у 0xProcessing перед включением WEBHOOK_ENFORCE_AUTH.
+function verifyCryptoSignature(body, signature) {
+    const secret = process.env.PROCESSING_SECRET_KEY || process.env.WEBHOOK_PASSWORD_PROCESSING || '';
+    if (!secret || !signature) return false;
+    const PaymentId = body.PaymentId || body.paymentId || body.uid || body.id || '';
+    const MerchantId = body.MerchantId || body.merchantId || body.merchantID || '';
+    const Email = body.Email || body.email || '';
+    const Currency = body.Currency || body.currency || '';
+    const raw = `${PaymentId}:${MerchantId}:${Email}:${Currency}:${secret}`;
+    const hash = crypto.createHash('md5').update(raw).digest('hex');
+    return hash.toLowerCase() === String(signature).toLowerCase();
+}
+
+// Включает fail-closed аутентификацию вебхуков (P0-01/P0-02).
+// По умолчанию OFF, чтобы не сломать прод до настройки секретов/схемы у провайдеров.
+const WEBHOOK_ENFORCE_AUTH = process.env.WEBHOOK_ENFORCE_AUTH === 'true';
+
+// P2-14: не логировать секретные заголовки.
+const SENSITIVE_HEADERS = ['authorization', 'x-signature', 'x-lava-signature', 'signature', 'cookie'];
+function redactHeaders(headers = {}) {
+    const out = {};
+    for (const [k, v] of Object.entries(headers)) {
+        out[k] = SENSITIVE_HEADERS.includes(String(k).toLowerCase()) ? '***REDACTED***' : v;
+    }
+    return out;
+}
+
 // URL соседнего контура (стейдж -> прод или прод -> стейдж)
 const isStagingEnv = process.env.NODE_ENV === 'staging' || process.env.BOT_NAME === 'meemee_official_bot';
 const PEER_BACKEND_URL = process.env.PEER_BACKEND_URL || (isStagingEnv ? 'http://viralapp-backend:3005' : 'http://viralapp-staging-backend:3005');
@@ -118,7 +146,7 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('📥 Lava webhook received at:', new Date().toISOString());
         console.log('📦 Full webhook data:', JSON.stringify(req.body, null, 2));
-        console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+        console.log('📋 Headers:', JSON.stringify(redactHeaders(req.headers), null, 2));
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         // Извлекаем данные из webhook (поддерживаем форматы Lava v1/v2/v3)
@@ -132,6 +160,7 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
         console.log(`📊 Extracted: eventType=${eventType}, status=${status}, email=${email}, invoiceId=${invoiceId}, orderId=${orderId}`);
 
         // Проверка Basic Auth от Lava (если настроены учетные данные)
+        let authPassed = false;
         const authHeader = req.headers['authorization'];
         if (process.env.LAVA_WEBHOOK_USER && process.env.LAVA_WEBHOOK_PASSWORD) {
             if (!authHeader || !authHeader.startsWith('Basic ')) {
@@ -145,6 +174,7 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
                 return res.status(401).json({ error: 'Unauthorized: invalid credentials' });
             }
             console.log('🔐 Lava Basic Auth verified successfully');
+            authPassed = true;
         }
 
         // Проверка подписи (если используется и настроен секрет)
@@ -156,8 +186,15 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
                 console.error('❌ Invalid Lava signature');
                 return res.status(403).json({ error: 'Invalid signature' });
             }
+            authPassed = true;
         } else {
             console.log('⚠️ Signature check skipped (header missing or secret not configured)');
+        }
+
+        // P0-02: fail-closed при включённом WEBHOOK_ENFORCE_AUTH
+        if (WEBHOOK_ENFORCE_AUTH && !authPassed) {
+            console.error('❌ Lava webhook rejected: enforcement on, no valid auth/signature');
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         // Поиск заказа: по orderId, затем по invoiceId (parentId), затем по email
@@ -201,12 +238,12 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
         if (isSuccess) {
             console.log('✅ Processing successful fiat payment:', order.orderId);
 
-            if (order.isPaid) {
-                console.log(`⚠️ Order ${order.orderId} already marked as paid, skipping crediting.`);
+            // P0-03: атомарный идемпотентный claim (защита от дублей/гонок)
+            const claimed = await orderService.tryClaimForPayment(order.orderId);
+            if (!claimed) {
+                console.log(`⚠️ Order ${order.orderId} already claimed, skipping crediting.`);
                 return res.json({ status: 'already_processed', orderId: order.orderId });
             }
-
-            // Отмечаем заказ как оплаченный
             await orderService.markAsPaid(order.orderId);
 
             // Проверяем что пакет существует, либо депозит
@@ -228,7 +265,7 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
 
             // Обрабатываем кешбэк для эксперта
             try {
-                const cashbackBase = depositUsd > 0 ? depositUsd : order.amount;
+                const cashbackBase = pkg ? Number(pkg.usdt || 0) : depositUsd; // P1-08: база кешбэка в USD
                 const cashbackResults = await referralService.processExpertCashback(order.userId, cashbackBase);
                 console.log('✅ Cashback processed:', cashbackResults);
                 const botInstance = bot || mainBot;
@@ -300,7 +337,7 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('📥 Crypto webhook received at:', new Date().toISOString());
         console.log('📦 Full webhook data:', JSON.stringify(req.body, null, 2));
-        console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+        console.log('📋 Headers:', JSON.stringify(redactHeaders(req.headers), null, 2));
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         // 0xProcessing может отправлять разные поля
@@ -313,6 +350,17 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
         const amountUSD = Number(req.body.TotalAmountUSD || req.body.totalAmountUSD || req.body.TotalAmount || req.body.totalAmount || req.body.AmountUSD || req.body.amountUSD || req.body.Amount || req.body.amount || 0);
 
         console.log(`🔍 Extracted fields: billingID=${billingID}, status=${status}, paymentId=${paymentId}, clientId=${clientId}, email=${email}, address=${address}, amountUSD=${amountUSD}`);
+
+        // P0-01: проверка подписи 0xProcessing (fail-closed при WEBHOOK_ENFORCE_AUTH)
+        {
+            const providedSig = req.body.Signature || req.body.signature || req.body.Sign || req.headers['x-signature'];
+            const sigOk = verifyCryptoSignature(req.body, providedSig);
+            if (WEBHOOK_ENFORCE_AUTH && !sigOk) {
+                console.error('❌ Crypto webhook rejected: invalid/missing signature (enforcement on)');
+                return res.status(403).json({ error: 'Invalid signature' });
+            }
+            if (!sigOk) console.log('⚠️ Crypto signature not verified (enforcement off or secret unset)');
+        }
 
         let order = null;
         if (billingID) {
@@ -354,12 +402,18 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
         if (isSuccess) {
             console.log('✅ Processing successful crypto payment:', effectiveOrderId);
 
-            if (order.isPaid) {
-                console.log(`⚠️ Crypto order ${effectiveOrderId} already marked as paid, skipping crediting.`);
+            // P0-03: атомарный идемпотентный claim
+            const claimed = await orderService.tryClaimForPayment(effectiveOrderId);
+            if (!claimed) {
+                console.log(`⚠️ Crypto order ${effectiveOrderId} already claimed, skipping crediting.`);
                 return res.json({ status: 'already_processed', orderId: effectiveOrderId });
             }
 
-            const depositAmount = amountUSD > 0 ? amountUSD : Number(order.amount || 2.0);
+            // P0-01/P0-04: НЕ доверяем сумме из тела вебхука — начисляем сумму заказа.
+            const depositAmount = Number(order.amount || 0);
+            if (amountUSD > 0 && Math.abs(amountUSD - depositAmount) > 0.01) {
+                console.warn(`⚠️ Webhook amountUSD=${amountUSD} != order.amount=${depositAmount}; crediting order.amount.`);
+            }
             console.log(`📊 Order details: userId=${order.userId}, package=${order.package}, amount=${depositAmount}`);
 
             await orderService.markAsPaid(effectiveOrderId, {
@@ -369,10 +423,10 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
 
             const pkg = PACKAGES[order.package];
             if (pkg) {
+                // P1-07: пакет начисляет ТОЛЬКО генерации (без доп. баланса)
                 console.log(`💳 Adding ${pkg.generations} videos to user ${order.userId}`);
                 await userService.addPaidQuota(order.userId, pkg.generations);
-                await userService.addWalletBalance(order.userId, depositAmount);
-                console.log(`✅ Successfully added ${pkg.generations} videos and ${depositAmount} USDT to user ${order.userId}`);
+                console.log(`✅ Successfully added ${pkg.generations} videos to user ${order.userId}`);
             } else {
                 console.log(`💰 Adding ${depositAmount} USDT wallet balance to user ${order.userId}`);
                 await userService.addWalletBalance(order.userId, depositAmount);
@@ -381,7 +435,7 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
 
             // Обрабатываем кешбэк для реферала
             try {
-                const cashbackResults = await referralService.processExpertCashback(order.userId, depositAmount);
+                const cashbackResults = await referralService.processExpertCashback(order.userId, pkg ? Number(pkg.usdt || 0) : depositAmount); // P1-08
                 console.log('✅ Cashback processed:', cashbackResults);
                 const botInstance = bot || mainBot;
                 await notifyCashbackRecipients(botInstance, cashbackResults);
@@ -463,6 +517,11 @@ app.get('/webhook/crypto', (req, res) => {
 // GET /webhook/analytics/clicks — отдача статистики кликов для интерактивной доски (TASK-21)
 app.get(['/webhook/analytics/clicks', '/webhook/staging/analytics/clicks', '/staging/webhook/analytics/clicks', '/api/analytics/clicks'], async (req, res) => {
     try {
+        // P2-14: закрываем публичный доступ к аналитике токеном
+        const analyticsToken = process.env.ANALYTICS_TOKEN;
+        if (!analyticsToken || (req.query.token !== analyticsToken && req.headers['x-analytics-token'] !== analyticsToken)) {
+            return res.status(404).json({ error: 'Not found' });
+        }
         const today = new Date().toISOString().split('T')[0];
         const [totalMap, dailyMap, totalClicksCount, uniqueUsersCount] = await Promise.all([
             redis.hgetall('analytics:clicks:total'),
