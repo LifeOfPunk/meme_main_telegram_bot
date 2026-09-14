@@ -32,8 +32,15 @@ jobs:
             cd "$DEPLOY_PATH"
 
             echo "📦 Fetching latest changes from main branch..."
+            sudo chown -R aiviral_agency_gmail_com:aiviral_agency_gmail_com "$DEPLOY_PATH" || true
             git fetch origin main
             git reset --hard origin/main
+
+            echo "⚙️ Syncing Caddyfile and reloading Caddy..."
+            if [ -f "infra/Caddyfile" ]; then
+              sudo cp infra/Caddyfile /opt/aiviral/n8n/Caddyfile
+              sudo docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile || echo "⚠️ Caddy reload skipped"
+            fi
 
             echo "🐳 Pre-building Production Docker containers before switch..."
             sudo docker compose build bot admin backend
