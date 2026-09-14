@@ -20,7 +20,7 @@ aiviral.agency, www.aiviral.agency {
     }
 
     handle /webhook/* {
-        reverse_proxy viralapp-staging-backend:3005
+        reverse_proxy viralapp-backend:3005
     }
 
     handle {

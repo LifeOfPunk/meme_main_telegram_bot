@@ -170,13 +170,9 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
             order = await orderService.getOrderByParentId(invoiceId);
             if (order) console.log(`🔍 Order found by parent invoiceId: ${invoiceId}`);
         }
-        if (!order && email) {
-            order = await orderService.getOrderByEmail(email);
-            if (order) console.log(`🔍 Order found by email: ${email}`);
-        }
 
         if (!order) {
-            console.warn('⚠️ Lava order not found locally:', { orderId, invoiceId, email });
+            console.warn('⚠️ Lava order not found locally:', { orderId, invoiceId });
             if (PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
                 return await forwardWebhookToPeer(req, res, PEER_BACKEND_URL);
             }
@@ -331,39 +327,13 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
             order = await orderService.getOrderByAddress(address);
             if (order) console.log(`🔍 Crypto order found by address: ${address}`);
         }
-        if (!order && email) {
-            order = await orderService.getOrderByEmail(email);
-            if (order) console.log(`🔍 Crypto order found by email: ${email}`);
-        }
-        if (!order && clientId) {
-            const userOrders = await orderService.getUserOrders(clientId);
-            order = userOrders.find(o => !o.isPaid && !o.isFiat);
-            if (order) console.log(`🔍 Crypto order found by user pending order: ${order.orderId}`);
-        }
+
         if (!order) {
-            console.warn('⚠️ Crypto order not found locally:', { billingID, paymentId, clientId, email, address });
+            console.warn('⚠️ Crypto order not found locally:', { billingID, paymentId, address });
             if (PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
                 return await forwardWebhookToPeer(req, res, PEER_BACKEND_URL);
             }
-        }
-
-        if (!order && clientId) {
-            console.log(`⚠️ Creating fallback crypto order for user ${clientId}`);
-            order = {
-                orderId: `crypto_webhook_${Date.now()}_${clientId}`,
-                userId: parseInt(clientId),
-                package: 'deposit',
-                amount: amountUSD > 0 ? amountUSD : 2.0,
-                isPaid: false,
-                isFiat: false
-            };
-            await orderService.createOrder(order);
-        }
-
-        if (!order) {
-            console.warn('⚠️ Crypto order not found for params:', { billingID, paymentId, clientId, email, address });
-            // Возвращаем 200 OK, чтобы 0xProcessing не долбил ретраями и не слал алерты
-            return res.status(200).json({ success: true, message: 'Order not found or canceled, acknowledged' });
+            return res.status(200).json({ success: true, message: 'Order not found, acknowledged' });
         }
 
         const effectiveOrderId = order.orderId;
