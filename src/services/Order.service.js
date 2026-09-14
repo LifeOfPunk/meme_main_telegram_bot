@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import redis from '../redis.js';
 
 export class OrderService {
@@ -25,7 +26,7 @@ export class OrderService {
 
         const outputAddress = orderData.output?.address || orderData.output?.Address || orderData.output?.wallet;
         if (outputAddress) {
-            await redis.set(`address_to_order:${outputAddress.toLowerCase()}`, orderId);
+            await redis.set(`address_to_order:${this._normalizeAddress(outputAddress)}`, orderId);
             await redis.set(`parent_to_order:${outputAddress}`, orderId);
         }
 
@@ -50,7 +51,7 @@ export class OrderService {
     // Получение заказа по адресу кошелька
     async getOrderByAddress(address) {
         if (!address) return null;
-        const orderId = await redis.get(`address_to_order:${address.toLowerCase()}`);
+        const orderId = await redis.get(`address_to_order:${this._normalizeAddress(address)}`);
         return orderId ? await this.getOrderById(orderId) : null;
     }
 
@@ -117,6 +118,25 @@ export class OrderService {
         });
     }
 
+    // P2-13: EVM-адреса регистронезависимы, Tron/base58 — регистрозависим.
+    _normalizeAddress(addr) {
+        const a = String(addr || '');
+        return (a.startsWith('0x') || a.startsWith('0X')) ? a.toLowerCase() : a;
+    }
+
+    // P0-03: атомарный, идемпотентный claim заказа на начисление.
+    // Возвращает true только ПЕРВОМУ вызвавшему (SET NX). Дубли вебхуков/кликов получают false.
+    async tryClaimForPayment(orderId) {
+        if (!orderId) return false;
+        try {
+            const res = await redis.set(`order_credit_lock:${orderId}`, new Date().toISOString(), 'NX');
+            return res === 'OK';
+        } catch (err) {
+            console.error(`❌ tryClaimForPayment failed for ${orderId}: ${err.message}`);
+            return false; // fail-closed: при ошибке не начисляем
+        }
+    }
+
     // Получение статистики платежей
     async getPaymentStats() {
         const orders = await this.getAllOrders();
@@ -160,7 +180,7 @@ export class OrderService {
     // Генерация ID заказа
     generateOrderId(type = 'ORDER') {
         const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const randomPart = Math.floor(1000000000 + Math.random() * 9000000000);
+        const randomPart = crypto.randomBytes(8).toString('hex');
         return `${type}-${datePart}-${randomPart}`;
     }
 }
