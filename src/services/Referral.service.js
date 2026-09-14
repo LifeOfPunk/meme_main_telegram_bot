@@ -45,9 +45,6 @@ export class ReferralService {
             // Сохраняем связь пользователь-реферер (навсегда)
             await redis.set(`user_referrer:${newUserId}`, referrerId);
             
-            // Даем рефереру 1 бесплатную генерацию
-            await this.userService.addFreeQuota(referrerId, REFERRAL_BONUS);
-            
             // Даем новому пользователю 1 бесплатную генерацию
             await this.userService.addFreeQuota(newUserId, REFERRAL_BONUS);
             
@@ -102,9 +99,6 @@ export class ReferralService {
 
             // Даем новому пользователю +1 бесплатную генерацию за переход по ссылке
             await this.userService.addFreeQuota(newUserId, REFERRAL_BONUS);
-
-            // Даем пригласившему эксперту +1 бесплатную генерацию за приглашение
-            await this.userService.addFreeQuota(expertId, REFERRAL_BONUS);
 
             // Обновляем список экспертных рефералов
             const updatedExpertReferrals = [...(expert.expertReferrals || []), newUserId];

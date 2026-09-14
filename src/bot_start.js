@@ -210,7 +210,7 @@ bot.start(async (ctx) => {
                     try {
                         await bot.telegram.sendMessage(
                             referrerId,
-                            `🎉 По вашей ссылке зарегистрировался новый пользователь!\n\n+${REFERRAL_BONUS} бесплатная генерация добавлена на ваш баланс!`
+                            `🎉 По вашей ссылке зарегистрировался новый пользователь!`
                         );
                     } catch (notifyErr) {
                         console.log(`Failed to notify referrer ${referrerId}:`, notifyErr.message);
@@ -231,7 +231,7 @@ bot.start(async (ctx) => {
                     try {
                         await bot.telegram.sendMessage(
                             expertId,
-                            `💼 По вашей партнерской ссылке зарегистрировался новый пользователь!\n\n+${REFERRAL_BONUS} бесплатная генерация добавлена на ваш баланс!\n💰 Вы будете получать 25% с каждой его оплаты (и 10% со 2-й линии)!`
+                            `💼 По вашей партнерской ссылке зарегистрировался новый пользователь!\n\n💰 Вы будете получать 25% с каждой его оплаты (и 10% со 2-й линии)!`
                         );
                     } catch (notifyErr) {
                         console.log(`Failed to notify expert ${expertId}:`, notifyErr.message);
