@@ -23,13 +23,23 @@
 ## Требуются действия Рика перед включением
 
 ### 1. Подписи вебхуков (P0-01 / P0-02) — НЕ включены по умолчанию
-Проверка реализована как **fail-closed под флагом** `WEBHOOK_ENFORCE_AUTH=true`, чтобы не сломать прод. Перед включением:
-- Подтвердить точную схему подписи **0xProcessing** (поле и формула). В коде временно `md5(PaymentId:MerchantId:Email:Currency:secret)` — сверить с их доками, поправить `verifyCryptoSignature` при расхождении.
-- Подтвердить механизм авторизации вебхука **Lava** (Basic-Auth и/или подпись) и задать секреты.
-- Заполнить `PROCESSING_SECRET_KEY`, `LAVA_WEBHOOK_USER/PASSWORD`, `WEBHOOK_PASSWORD_PROCESSING`.
-- Прогнать тестовый платёж на стейдже → затем `WEBHOOK_ENFORCE_AUTH=true`.
+Проверка реализована **fail-closed под флагом** `WEBHOOK_ENFORCE_AUTH=true`. Схемы подтверждены по докам провайдеров:
 
-> До включения флага основной риск уже снижен: сумма берётся из заказа, начисление идемпотентно, orderId непредсказуем. Остаточный вектор — самоподделка своего же заказа без оплаты; закрывается подписью.
+**0xProcessing** (payment form) — подтверждено (docs.0xprocessing.com):
+`MD5(PaymentId:MerchantId:Email:Currency:WebhookPassword)`, поле подписи `Signature`.
+- Секрет = **Webhook Password** из кабинета 0xProcessing (Settings → API → WebhookURL).
+- Задать env `WEBHOOK_PASSWORD_PROCESSING=<webhook password>`.
+
+**Lava.top** — HMAC-SHA256 по **сырому телу** запроса, заголовок `signature`:
+- Задать секрет вебхука в кабинете Lava и продублировать в env `LAVA_WEBHOOK_SECRET=<secret>`.
+- На стейдже прогнать реальный вебхук и убедиться, что валиден (сверить кодировку hex; если Lava шлёт base64 — поправить `verifyLavaSignature`).
+
+Порядок включения:
+1. Заполнить `WEBHOOK_PASSWORD_PROCESSING` и `LAVA_WEBHOOK_SECRET`.
+2. Тестовый платёж крипта+карта на **стейдже** → в логах `✅ Valid`.
+3. Затем `WEBHOOK_ENFORCE_AUTH=true` (сначала стейдж, потом прод).
+
+> До включения флага риск уже снижен: сумма из заказа, начисление идемпотентно, orderId непредсказуем. Остаточный вектор — самоподделка своего заказа без оплаты; закрывается подписью.
 
 ### 2. Разделение сред (P1-05) — инфраструктурное, требует твоих секретов
 - Завести **отдельные** ключи/мерчант 0xProcessing и Lava для стейджа и прод.

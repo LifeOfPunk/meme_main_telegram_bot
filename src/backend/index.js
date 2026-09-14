@@ -14,8 +14,10 @@ const app = express();
 const PORT = process.env.WEBHOOK_PORT || 3000;
 const USE_WEBHOOK = process.env.USE_WEBHOOK === 'true';
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// Сохраняем сырое тело для HMAC-проверки подписи Lava
+const rawBodySaver = (req, res, buf) => { if (buf && buf.length) req.rawBody = buf; };
+app.use(bodyParser.json({ verify: rawBodySaver }));
+app.use(bodyParser.urlencoded({ extended: true, verify: rawBodySaver }));
 
 const orderService = new OrderService();
 const userService = new UserService();
@@ -37,19 +39,19 @@ if (USE_WEBHOOK) {
 }
 
 // Функция проверки подписи от Lava
-function verifyLavaSignature(data, signature) {
-    const secret = process.env.WEBHOOK_PASSWORD_PROCESSING || '';
-    const hash = crypto
-        .createHash('md5')
-        .update(JSON.stringify(data) + secret)
-        .digest('hex');
-    return hash === signature;
+// Lava.top: HMAC-SHA256 по СЫРОМУ телу запроса, заголовок `signature`, секрет из дашборда Lava.
+function verifyLavaSignature(rawBody, signature) {
+    const secret = process.env.LAVA_WEBHOOK_SECRET || '';
+    if (!secret || !signature) return false;
+    const raw = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody || ''), 'utf-8');
+    const hash = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    return hash.toLowerCase() === String(signature).toLowerCase();
 }
 
-// P0-01: проверка подписи 0xProcessing (fail-closed).
-// TODO(Rick): подтвердить точную схему у 0xProcessing перед включением WEBHOOK_ENFORCE_AUTH.
+// P0-01: проверка подписи 0xProcessing (payment form): MD5(PaymentId:MerchantId:Email:Currency:WebhookPassword).
+// Схема подтверждена по docs.0xprocessing.com. Секрет = "Webhook Password" из кабинета мерчанта.
 function verifyCryptoSignature(body, signature) {
-    const secret = process.env.PROCESSING_SECRET_KEY || process.env.WEBHOOK_PASSWORD_PROCESSING || '';
+    const secret = process.env.WEBHOOK_PASSWORD_PROCESSING || process.env.PROCESSING_SECRET_KEY || '';
     if (!secret || !signature) return false;
     const PaymentId = body.PaymentId || body.paymentId || body.uid || body.id || '';
     const MerchantId = body.MerchantId || body.merchantId || body.merchantID || '';
@@ -179,18 +181,18 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
             authPassed = true;
         }
 
-        // Проверка подписи (если используется и настроен секрет)
-        const signature = req.headers['x-signature'] || req.headers['x-lava-signature'] || req.headers['signature'];
-        if (signature && process.env.WEBHOOK_PASSWORD_PROCESSING) {
-            const isValid = verifyLavaSignature(req.body, signature);
-            console.log(`🔐 Signature verification: ${isValid ? '✅ Valid' : '❌ Invalid'}`);
+        // Проверка подписи Lava (HMAC-SHA256 по сырому телу, заголовок `signature`)
+        const signature = req.headers['signature'] || req.headers['x-signature'] || req.headers['x-lava-signature'];
+        if (signature && process.env.LAVA_WEBHOOK_SECRET) {
+            const isValid = verifyLavaSignature(req.rawBody, signature);
+            console.log(`🔐 Lava signature verification: ${isValid ? '✅ Valid' : '❌ Invalid'}`);
             if (!isValid) {
                 console.error('❌ Invalid Lava signature');
                 return res.status(403).json({ error: 'Invalid signature' });
             }
             authPassed = true;
         } else {
-            console.log('⚠️ Signature check skipped (header missing or secret not configured)');
+            console.log('⚠️ Lava signature check skipped (header missing or LAVA_WEBHOOK_SECRET not set)');
         }
 
         // P0-02: fail-closed при включённом WEBHOOK_ENFORCE_AUTH
