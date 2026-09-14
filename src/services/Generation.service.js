@@ -199,7 +199,7 @@ export class GenerationService {
             await this.updateGeneration(generationId, { status: 'processing' });
 
             // Вызов API для генерации видео
-            const videoUrl = await this.generateVideo(generation.prompt);
+            const videoUrl = await this.generateVideo(generation.prompt, generation.deductedType);
 
             if (videoUrl) {
                 // const { localPath } = await this.watermarkAndSave(videoUrl, generationId);
@@ -279,6 +279,16 @@ export class GenerationService {
                             failed_generations: (user.failed_generations || 0) + 1
                         });
                     }
+                    
+                    // Возвращаем списанную квоту/средства при сбое генерации
+                    if (generation.deductedType) {
+                        try {
+                            await this.userService.refundGenerationCost(generation.userId, generation.deductedType);
+                            console.log(`↩️ Refunded ${generation.deductedType} quota to user ${generation.userId} due to generation error`);
+                        } catch (refundErr) {
+                            console.error(`⚠️ Failed to refund ${generation.deductedType} to user ${generation.userId}: ${refundErr.message}`);
+                        }
+                    }
                 }
                 
                 // Отправляем уведомление об ошибке
@@ -329,22 +339,27 @@ export class GenerationService {
         }
     }
 
-    // Генерация видео через API
-    async generateVideo(prompt) {
+    // Генерация видео через API (TASK-15 / dynamic model routing)
+    async generateVideo(prompt, deductedType = null) {
         try {
             if (!this.apiKey) {
                 throw new Error('API key not configured');
             }
 
-            console.log('🎬 Starting video generation...');
+            const isPaid = (deductedType === 'paid' || deductedType === 'balance');
+            const targetModel = isPaid
+                ? (process.env.KIE_PAID_MODEL || 'google/gemini-omni-flash-1-1')
+                : (process.env.KIE_FREE_MODEL || 'grok-imagine/text-to-video');
+
+            console.log(`🎬 Starting video generation | Quota type: ${deductedType || 'free'} | Model: ${targetModel} | isPaid: ${isPaid}`);
             
-            // Автодетект языка и подготовка промпта с аудио-директивой
+            // Автодетект языка и подготовка промпта с аудио-директивой (RU/EN для всех моделей)
             const promptData = this.formatPromptWithLanguage(prompt);
             console.log('Prepared Prompt for API:', promptData);
 
-            // Подготовка input для Kie.ai в зависимости от модели (TASK-09 & TASK-15)
+            // Подготовка input для Kie.ai в зависимости от модели
             let inputPayload;
-            if (this.modelName.includes('grok')) {
+            if (targetModel.includes('grok')) {
                 inputPayload = {
                     prompt: promptData,
                     aspect_ratio: '9:16',
@@ -365,7 +380,7 @@ export class GenerationService {
             const response = await axios.post(
                 `${this.apiUrl}/createTask`,
                 {
-                    model: this.modelName || 'google/gemini-omni-flash-1-1',
+                    model: targetModel,
                     input: inputPayload
                 },
                 {
