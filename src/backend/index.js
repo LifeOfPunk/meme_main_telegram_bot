@@ -78,7 +78,10 @@ async function forwardWebhookToPeer(req, res, peerUrl) {
         });
 
         console.log(`🔀 Peer responded: status=${peerRes.status}`);
-        return res.status(peerRes.status).json(peerRes.data);
+        if (peerRes.status >= 200 && peerRes.status < 300) {
+            return res.status(peerRes.status).json(peerRes.data);
+        }
+        return res.status(200).json({ success: true, message: 'Forwarded to peer, order not found on both nodes, acknowledged' });
     } catch (err) {
         console.error(`⚠️ Failed to forward webhook to peer ${peerUrl}:`, err.message);
         return res.status(200).json({ success: true, message: 'Peer forwarding failed, acknowledged' });
