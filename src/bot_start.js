@@ -79,8 +79,22 @@ bot.action('show_full_guide', async (ctx) => {
     }
 });
 
-// Session middleware
-bot.use(session());
+// Session middleware — P2-15: хранение в Redis (переживает рестарт/несколько инстансов)
+const SESSION_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS || 60 * 60 * 24 * 7);
+const redisSessionStore = {
+    async get(key) {
+        try { const raw = await redis.get(`tg_session:${key}`); return raw ? JSON.parse(raw) : undefined; }
+        catch (err) { console.warn(`⚠️ session get failed: ${err.message}`); return undefined; }
+    },
+    async set(key, value) {
+        try { await redis.set(`tg_session:${key}`, JSON.stringify(value), 'EX', SESSION_TTL_SECONDS); }
+        catch (err) { console.warn(`⚠️ session set failed: ${err.message}`); }
+    },
+    async delete(key) {
+        try { await redis.del(`tg_session:${key}`); } catch (err) { /* best-effort */ }
+    }
+};
+bot.use(session({ store: redisSessionStore }));
 
 // Регистрация обработчиков соцсетей и меню пользователя
 registerSocialGiftHandlers(bot);
