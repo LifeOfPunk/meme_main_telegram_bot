@@ -3,6 +3,26 @@
   "updated_at": "2026-09-12T22:15:00Z",
   "templates": [
     {
+      "id": "cheburashka",
+      "slug": "cheburashka",
+      "name": "🙈 Гена и Чебурашка",
+      "status": "active",
+      "order": 1,
+      "views_count": 418200,
+      "views_badge": "🔥 400,000+ просмотров",
+      "description": "Вирусный мем: пассажир заходит в трамвай, держа на руках Чебурашку.",
+      "media": {
+        "video": "./media/cheburashka.mp4",
+        "video_preview": "/proto-media/cheburashka_stats.jpg",
+        "statistic": "./media/cheburashka_stats.jpg",
+        "statistic_preview": "/proto-media/cheburashka_stats.jpg"
+      },
+      "auto_generate": true,
+      "inputs": [],
+      "prompt_template": "Cheburashka viral meme",
+      "duration": 10
+    },
+    {
       "id": "mama_taxi",
       "slug": "mama-vyzyvay",
       "name": "🚕 Мама вызывай",

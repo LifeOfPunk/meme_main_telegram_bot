@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { Telegraf, Scenes, session, Markup } from 'telegraf';
+import redis from './redis.js';
 import { UserService } from './services/User.service.js';
 import { OrderService } from './services/Order.service.js';
 import { PaymentCryptoService } from './services/PaymentCrypto.service.js';
@@ -162,6 +163,27 @@ bot.use(async (ctx, next) => {
     await next();
     const ms = Date.now() - start;
     console.log(`⏱️ Response time: ${ms}ms`);
+});
+
+// Middleware для сбора аналитики кликов по кнопкам (TASK-21 / Analytics Heatmap)
+bot.use(async (ctx, next) => {
+    try {
+        if (ctx.callbackQuery && ctx.callbackQuery.data) {
+            const cbData = ctx.callbackQuery.data;
+            const today = new Date().toISOString().split('T')[0];
+            const userId = ctx.from?.id;
+
+            Promise.all([
+                redis.hincrby('analytics:clicks:total', cbData, 1),
+                redis.hincrby(`analytics:clicks:daily:${today}`, cbData, 1),
+                redis.hincrby('analytics:clicks:summary', 'total_clicks', 1),
+                userId ? redis.pfadd('analytics:clicks:hll:users', userId.toString()) : null
+            ]).catch(err => console.warn('⚠️ Click analytics tracking error:', err.message));
+        }
+    } catch (err) {
+        console.warn('⚠️ Click tracking error:', err.message);
+    }
+    await next();
 });
 
 // Обработка команды /start

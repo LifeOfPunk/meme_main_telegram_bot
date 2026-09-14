@@ -8,6 +8,7 @@ import { UserService } from '../services/User.service.js';
 import { ReferralService } from '../services/Referral.service.js';
 import { currencyService } from '../services/Currency.service.js';
 import { PACKAGES } from '../config.js';
+import redis from '../redis.js';
 
 const app = express();
 const PORT = process.env.WEBHOOK_PORT || 3000;
@@ -488,6 +489,58 @@ app.get('/webhook/crypto', (req, res) => {
         method: 'POST'
     });
 });
+
+// GET /webhook/analytics/clicks — отдача статистики кликов для интерактивной доски (TASK-21)
+app.get(['/webhook/analytics/clicks', '/webhook/staging/analytics/clicks', '/staging/webhook/analytics/clicks', '/api/analytics/clicks'], async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const [totalMap, dailyMap, totalClicksCount, uniqueUsersCount] = await Promise.all([
+            redis.hgetall('analytics:clicks:total'),
+            redis.hgetall(`analytics:clicks:daily:${today}`),
+            redis.hget('analytics:clicks:summary', 'total_clicks'),
+            redis.pfcount('analytics:clicks:hll:users')
+        ]);
+
+        const buttons = Object.entries(totalMap || {})
+            .map(([callback, count]) => ({ callback, count: parseInt(count, 10) || 0 }))
+            .sort((a, b) => b.count - a.count);
+
+        const getClicks = (keyPattern) => {
+            return buttons
+                .filter(b => b.callback.includes(keyPattern))
+                .reduce((acc, b) => acc + b.count, 0);
+        };
+
+        const funnel = {
+            create_video: getClicks('create_video'),
+            catalog: getClicks('catalog'),
+            cheburashka: getClicks('cheburashka'),
+            buy: getClicks('buy'),
+            card: getClicks('pay_card'),
+            crypto: getClicks('pay_crypto'),
+            profile: getClicks('profile'),
+            referral: getClicks('referral')
+        };
+
+        res.json({
+            status: 'ok',
+            updatedAt: new Date().toISOString(),
+            totalClicks: parseInt(totalClicksCount, 10) || buttons.reduce((acc, b) => acc + b.count, 0),
+            uniqueUsers: uniqueUsersCount || 0,
+            funnel,
+            topButtons: buttons.slice(0, 25),
+            allButtons: totalMap || {},
+            daily: {
+                date: today,
+                buttons: dailyMap || {}
+            }
+        });
+    } catch (err) {
+        console.error('❌ Error fetching click analytics:', err);
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+});
+
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({ error: 'Not found' });
