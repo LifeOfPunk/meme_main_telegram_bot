@@ -292,6 +292,43 @@ export class GenerationService {
         }
     }
 
+    // Определение языка и добавление речевой директивы для видеомодели
+    formatPromptWithLanguage(prompt) {
+        if (!prompt) return '';
+
+        // Если это объект (каталожный мем)
+        if (typeof prompt === 'object' && prompt !== null) {
+            const promptCopy = JSON.parse(JSON.stringify(prompt));
+            const serialized = JSON.stringify(promptCopy);
+            const isRussian = /[\u0400-\u04FF]/.test(serialized);
+
+            if (isRussian) {
+                promptCopy.language = 'Russian';
+                promptCopy.audio_directive = 'All spoken dialogue, character voices, and singing must be strictly in Russian language. Native Russian pronunciation, no English translation.';
+                if (promptCopy.notes) {
+                    promptCopy.notes += ' All speech and dialogue must be voiced strictly in Russian.';
+                } else {
+                    promptCopy.notes = 'All speech and dialogue must be voiced strictly in Russian.';
+                }
+            } else {
+                promptCopy.language = 'English';
+                promptCopy.audio_directive = 'All spoken dialogue and character voices must be in English.';
+            }
+
+            return JSON.stringify(promptCopy);
+        }
+
+        // Если это строка (кастомный промпт пользователя)
+        const str = String(prompt).trim();
+        const isRussian = /[\u0400-\u04FF]/.test(str);
+
+        if (isRussian) {
+            return `[Language: Russian / Русский]\n[Audio & Speech Directive: All dialogue, speech, and character voices must be spoken strictly in Russian language. Native Russian pronunciation, no English translation, no English accent. All quoted speech must be spoken exactly in Russian.]\n\n${str}`;
+        } else {
+            return `[Language: English]\n[Audio & Speech Directive: All dialogue and character voices must be in English.]\n\n${str}`;
+        }
+    }
+
     // Генерация видео через API
     async generateVideo(prompt) {
         try {
@@ -301,16 +338,9 @@ export class GenerationService {
 
             console.log('🎬 Starting video generation...');
             
-            // Определяем, является ли prompt объектом или строкой
-            let promptData;
-            if (typeof prompt === 'object') {
-                // Если это объект, преобразуем в JSON строку для API
-                promptData = JSON.stringify(prompt);
-                console.log('Prompt (JSON):', promptData);
-            } else {
-                promptData = prompt;
-                console.log('Prompt:', promptData);
-            }
+            // Автодетект языка и подготовка промпта с аудио-директивой
+            const promptData = this.formatPromptWithLanguage(prompt);
+            console.log('Prepared Prompt for API:', promptData);
 
             // Подготовка input для Kie.ai в зависимости от модели (TASK-09 & TASK-15)
             let inputPayload;
