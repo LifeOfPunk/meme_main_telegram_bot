@@ -68,10 +68,10 @@ export async function handlePayCardPackages(ctx) {
         await safeAnswerCbQuery(ctx);
         
         const packageButtons = [
-            [{ text: '🎬 500₽ (10 видео)', callback_data: 'pay_card_pack_10' }],
-            [{ text: '📦 2250₽ (50 видео)', callback_data: 'pay_card_pack_50' }],
-            [{ text: '🎁 4250₽ (100 видео)', callback_data: 'pay_card_pack_100' }],
-            [{ text: '💎 20 000₽ (500 видео)', callback_data: 'pay_card_pack_500' }],
+            [{ text: '🎬 500₽', callback_data: 'pay_card_pack_10' }],
+            [{ text: '📦 2250₽', callback_data: 'pay_card_pack_50' }],
+            [{ text: '🎁 4250₽', callback_data: 'pay_card_pack_100' }],
+            [{ text: '💎 20 000₽', callback_data: 'pay_card_pack_500' }],
             [{ text: '🔙 Назад к способам оплаты', callback_data: 'create_video' }]
         ];
 
