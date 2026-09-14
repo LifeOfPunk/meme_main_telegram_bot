@@ -117,12 +117,6 @@ export class OrderService {
         });
     }
 
-    // Получение заказа по email
-    async getOrderByEmail(email) {
-        const orderId = await redis.get(`email_to_order:${email}`);
-        return orderId ? await this.getOrderById(orderId) : null;
-    }
-
     // Получение статистики платежей
     async getPaymentStats() {
         const orders = await this.getAllOrders();

@@ -204,6 +204,11 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
         if (isSuccess) {
             console.log('✅ Processing successful fiat payment:', order.orderId);
 
+            if (order.isPaid) {
+                console.log(`⚠️ Order ${order.orderId} already marked as paid, skipping crediting.`);
+                return res.json({ status: 'already_processed', orderId: order.orderId });
+            }
+
             // Отмечаем заказ как оплаченный
             await orderService.markAsPaid(order.orderId);
 
@@ -377,6 +382,12 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
 
         if (isSuccess) {
             console.log('✅ Processing successful crypto payment:', effectiveOrderId);
+
+            if (order.isPaid) {
+                console.log(`⚠️ Crypto order ${effectiveOrderId} already marked as paid, skipping crediting.`);
+                return res.json({ status: 'already_processed', orderId: effectiveOrderId });
+            }
+
             const depositAmount = amountUSD > 0 ? amountUSD : Number(order.amount || 2.0);
             console.log(`📊 Order details: userId=${order.userId}, package=${order.package}, amount=${depositAmount}`);
 

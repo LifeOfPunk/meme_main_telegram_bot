@@ -624,6 +624,11 @@ export async function handleCheckPayment(ctx, orderId) {
         
         if (result.status === 'paid') {
             console.log(`✅ Payment confirmed for order: ${orderId}`);
+
+            if (order.isPaid) {
+                console.log(`⚠️ Order ${orderId} already processed as paid.`);
+                return await ctx.reply('✅ Этот платеж уже успешно зачислен на ваш баланс!');
+            }
             
             // Зачисляем фактически поступившую сумму 1 к 1 на баланс USDT (TASK-02-03)
             const depositAmount = Number(result.amount || order.amount || 2.0);
@@ -685,7 +690,7 @@ export async function handleCheckPayment(ctx, orderId) {
 export async function handlePaymentSuccess(bot, orderId) {
     try {
         const order = await orderService.getOrderById(orderId);
-        if (!order) return;
+        if (!order || order.isPaid) return;
         
         // Отмечаем заказ как оплаченный
         await orderService.markAsPaid(orderId);
