@@ -25,10 +25,10 @@
 ### 1. Подписи вебхуков (P0-01 / P0-02) — НЕ включены по умолчанию
 Проверка реализована **fail-closed под флагом** `WEBHOOK_ENFORCE_AUTH=true`. Схемы подтверждены по докам провайдеров:
 
-**0xProcessing** (payment form) — подтверждено (docs.0xprocessing.com):
+**0xProcessing** (payment form) — по докам 0xProcessing:
 `MD5(PaymentId:MerchantId:Email:Currency:WebhookPassword)`, поле подписи `Signature`.
-- Секрет = **Webhook Password** из кабинета 0xProcessing (Settings → API → WebhookURL).
-- Задать env `WEBHOOK_PASSWORD_PROCESSING=<webhook password>`.
+- Секрет = **Webhook Password** из кабинета 0xProcessing (Settings → API → WebhookURL); env `WEBHOOK_PASSWORD_PROCESSING`.
+- ⚠️ Пример-хеш из доков локально НЕ воспроизвёлся — точную строку (пробелы, ShopId, формат `Currency`) обязательно провалидировать реальным вебхуком на стейдже до включения флага; при расхождении поправить `verifyCryptoSignature`.
 
 **Lava.top** — HMAC-SHA256 по **сырому телу** запроса, заголовок `signature`:
 - Задать секрет вебхука в кабинете Lava и продублировать в env `LAVA_WEBHOOK_SECRET=<secret>`.

@@ -48,8 +48,9 @@ function verifyLavaSignature(rawBody, signature) {
     return hash.toLowerCase() === String(signature).toLowerCase();
 }
 
-// P0-01: проверка подписи 0xProcessing (payment form): MD5(PaymentId:MerchantId:Email:Currency:WebhookPassword).
-// Схема подтверждена по docs.0xprocessing.com. Секрет = "Webhook Password" из кабинета мерчанта.
+// P0-01: подпись 0xProcessing (payment form): MD5(PaymentId:MerchantId:Email:Currency:WebhookPassword).
+// Порядок полей — по докам 0xProcessing; секрет = "Webhook Password" из кабинета.
+// ⚠️ Точную строку (пробелы/ShopId/значение Currency) ОБЯЗАТЕЛЬНО провалидировать реальным вебхуком на стейдже до включения enforcement.
 function verifyCryptoSignature(body, signature) {
     const secret = process.env.WEBHOOK_PASSWORD_PROCESSING || process.env.PROCESSING_SECRET_KEY || '';
     if (!secret || !signature) return false;
