@@ -1,4 +1,4 @@
-import { PaymentCryptoService } from './src/services/PaymentCrypto.service.js';
+import { PaymentCryptoService } from '../src/services/PaymentCrypto.service.js';
 
 const testPayments = async () => {
     console.log('🧪 Тестируем создание криптоплатежей...\n');

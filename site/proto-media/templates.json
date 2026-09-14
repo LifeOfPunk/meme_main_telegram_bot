@@ -1,0 +1,98 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-09-12T22:15:00Z",
+  "templates": [
+    {
+      "id": "cheburashka",
+      "slug": "cheburashka",
+      "name": "🙈 Гена и Чебурашка",
+      "status": "active",
+      "order": 1,
+      "views_count": 418200,
+      "views_badge": "🔥 400,000+ просмотров",
+      "description": "Вирусный мем: пассажир заходит в трамвай, держа на руках Чебурашку.",
+      "media": {
+        "video": "./media/cheburashka.mp4",
+        "video_preview": "/proto-media/cheburashka_stats.jpg",
+        "statistic": "./media/cheburashka_stats.jpg",
+        "statistic_preview": "/proto-media/cheburashka_stats.jpg"
+      },
+      "auto_generate": true,
+      "inputs": [],
+      "prompt_template": "Cheburashka viral meme",
+      "duration": 10
+    },
+    {
+      "id": "mama_taxi",
+      "slug": "mama-vyzyvay",
+      "name": "🚕 Мама вызывай",
+      "status": "active",
+      "views_count": 1136642,
+      "views_badge": "🔥 1,136,642 просмотров",
+      "description": "Вирусный тренд со славянскими бабушками и танцующим персонажем у автобусной остановки.",
+      "media": {
+        "video": "./media/mother.MP4",
+        "video_preview": "/proto-media/mother_frame.jpg",
+        "statistic": "./media/statistic.jpeg",
+        "statistic_preview": "/proto-media/statistic.jpeg"
+      },
+      "inputs": [
+        {
+          "key": "name",
+          "label": "Имя персонажа",
+          "type": "text",
+          "placeholder": "Например, Rick",
+          "required": true
+        },
+        {
+          "key": "gender",
+          "label": "Пол персонажа",
+          "type": "choice",
+          "options": [
+            { "value": "boy", "label": "👦🏻 Я мальчик" },
+            { "value": "girl", "label": "🧒🏼 Я девочка" }
+          ],
+          "required": true
+        }
+      ],
+      "prompt_template": "A large bus is parked along a cobblestone road at a Slavic-style bus stop decorated with folk patterns. Three elderly Slavic grandmothers dance joyfully... Slavic {gender_child} named {name}...",
+      "duration": 8
+    },
+    {
+      "id": "228",
+      "slug": "mops-dostavka",
+      "name": "🐶 Мопс доставка",
+      "status": "active",
+      "views_count": 850000,
+      "views_badge": "🔥 850,000+ просмотров",
+      "description": "Юмористический скетч: недовольный клиент ругает мопса-курьера с рюкзаком доставки.",
+      "media": {
+        "video": "./media/mopsvideo.mp4",
+        "video_preview": "/proto-media/mops_frame.jpg",
+        "statistic": "./media/mops.jpeg",
+        "statistic_preview": "/proto-media/mops.jpeg"
+      },
+      "inputs": [
+        {
+          "key": "name",
+          "label": "Имя персонажа",
+          "type": "text",
+          "placeholder": "Например, Rick",
+          "required": true
+        },
+        {
+          "key": "gender",
+          "label": "Пол персонажа",
+          "type": "choice",
+          "options": [
+            { "value": "boy", "label": "👦🏻 Я мальчик" },
+            { "value": "girl", "label": "🧒🏼 Я девочка" }
+          ],
+          "required": true
+        }
+      ],
+      "prompt_template": "Жирдяй (очень толстый человек) стоит у двери квартиры и ругает мопса в желтом рюкзаке... Мопс отвечает: 'Мне пофиг, я {name}'...",
+      "duration": 8
+    }
+  ]
+}

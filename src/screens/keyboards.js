@@ -72,12 +72,19 @@ export function createChainKeyboard(crypto, chains, packageKey = 'single') {
     return { inline_keyboard: buttons };
 }
 
-// Генерация клавиатуры для оплаты криптой (не используется, логика в paymentController)
-export function createPaymentCryptoKeyboard(orderId, packageKey = 'single') {
+// Генерация клавиатуры для оплаты криптой (TASK-02-03, TASK-15, TASK-20)
+export function createPaymentCryptoKeyboard(orderId, packageKey = 'deposit', address = null, paymentUrl = null) {
     const buttons = [];
     
-    buttons.push([{ text: '🔄 Проверка платежа', callback_data: `check_payment_${orderId}` }]);
-    buttons.push([{ text: '⏪ Вернуться назад', callback_data: `select_package_${packageKey}` }]);
+    // Кнопка показа QR-кода по запросу (адрес копируется кликом по тексту в сообщении)
+    buttons.push([{ text: '🖼️ Показать QR-код', callback_data: `show_qr_${orderId}` }]);
+
+    if (paymentUrl && typeof paymentUrl === 'string' && paymentUrl.startsWith('http') && !paymentUrl.includes('404')) {
+        buttons.push([{ text: '🌐 Страница оплаты', url: paymentUrl }]);
+    }
+    buttons.push([{ text: '✅ Проверить оплату', callback_data: `check_payment_${orderId}` }]);
+    const backCallback = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'buy';
+    buttons.push([{ text: '🔙 Назад', callback_data: backCallback }]);
     
     return {
         inline_keyboard: buttons
@@ -95,39 +102,97 @@ export function createAfterPaymentKeyboard() {
 }
 
 // Генерация динамической клавиатуры главного меню
-export async function createMainMenuKeyboard(userId) {
-    const user = await userService.getUser(userId);
-    const freeQuota = user?.free_quota || 0;
-    const paidQuota = user?.paid_quota || 0;
+export async function createMainMenuKeyboard(userIdOrUser) {
+    let freeQuota = 0;
+    if (typeof userIdOrUser === 'object' && userIdOrUser !== null) {
+        freeQuota = userIdOrUser.free_quota || 0;
+    } else if (typeof userIdOrUser === 'number' && userIdOrUser <= 100 && !Number.isInteger(userIdOrUser / 10000)) {
+        // If passed direct quota count
+        freeQuota = userIdOrUser;
+    } else if (userIdOrUser) {
+        const user = await userService.getUser(userIdOrUser);
+        freeQuota = user?.free_quota || 0;
+    }
     
     const buttons = [];
     
-    // Показываем кнопку бесплатной генерации только если есть бесплатная квота
+    // Кнопка 1: "🎬 Создать видео" (всегда вверху)
+    buttons.push([{
+        text: '🎬 Создать видео',
+        callback_data: 'create_video'
+    }]);
+
+    // Кнопка 2: "🎁 Бесплатная генерация" (только если есть бесплатные генерации)
     if (freeQuota > 0) {
         buttons.push([{
             text: '🎁 Бесплатная генерация',
-            callback_data: 'create_video'
-        }]);
-    } else if (paidQuota > 0) {
-        buttons.push([{
-            text: '🎬 Сгенерировать видео',
-            callback_data: 'create_video'
-        }]);
-    } else {
-        // Когда генерации закончились: меняем "Купить видео" на "Сгенерировать видео",
-        // которая сразу открывает покупку пакетов
-        buttons.push([{
-            text: '🎬 Сгенерировать видео',
-            callback_data: 'buy'
+            callback_data: 'create_video_free'
         }]);
     }
     
-    // Остальные кнопки показываем всегда
-    buttons.push(
-        [{ text: '👤 Личный кабинет', callback_data: 'profile' }],
-        [{ text: 'ℹ️ О проекте', callback_data: 'about' }],
-        [{ text: '🎁 Приведи друга', callback_data: 'referral' }]
-    );
+    // Кнопка 3: "💳 Пополнить баланс" (целевое действие пополнения)
+    buttons.push([{
+        text: '💳 Пополнить баланс',
+        callback_data: 'buy'
+    }]);
+
+    // Кнопка 4: "👤 Личный кабинет"
+    buttons.push([{
+        text: '👤 Личный кабинет',
+        callback_data: 'profile'
+    }]);
+
+    // Кнопка 5: "🤝 Реферальная программа"
+    buttons.push([{
+        text: '🤝 Реферальная программа',
+        callback_data: 'referral'
+    }]);
+    
+    return { inline_keyboard: buttons };
+}
+
+// Генерация клавиатуры личного кабинета (TASK-07, TASK-15, TASK-20)
+export function createProfileKeyboard(user, referralStats = null) {
+    const totalCashback = Number(user?.totalCashback ?? referralStats?.totalCashback ?? user?.affiliate_earnings ?? 0);
+    const buttons = [];
+
+    // 1. [💸 Вывести средства] -> ПОКАЗЫВАТЬ ТОЛЬКО ЕСЛИ у пользователя есть заработанный кешбэк (totalCashback > 0)
+    if (totalCashback > 0) {
+        buttons.push([{
+            text: '💸 Вывести средства',
+            callback_data: 'withdraw'
+        }]);
+    }
+
+    // 1. [💳 История транзакций]
+    buttons.push([{
+        text: '💳 История транзакций',
+        callback_data: 'profile_transactions'
+    }]);
+
+    // 2. [💬 Поддержка проекта] -> https://t.me/aiviral_main
+    buttons.push([{
+        text: '💬 Поддержка проекта',
+        url: 'https://t.me/aiviral_main'
+    }]);
+
+    // 3. [❓ Инструкция] -> https://aiviral.agency/kak-pisat-promty/
+    buttons.push([{
+        text: '❓ Инструкция',
+        url: 'https://aiviral.agency/kak-pisat-promty/'
+    }]);
+
+    // 4. [ℹ️ О проекте] -> открывает экран о проекте
+    buttons.push([{
+        text: 'ℹ️ О проекте',
+        callback_data: 'about'
+    }]);
+
+    // 5. [🔙 Главное меню]
+    buttons.push([{
+        text: '🔙 Главное меню',
+        callback_data: 'main_menu'
+    }]);
     
     return { inline_keyboard: buttons };
 }

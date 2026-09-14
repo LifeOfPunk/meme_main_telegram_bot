@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { GenerationService } from './src/services/Generation.service.js';
-import redis from './src/redis.js';
+import { GenerationService } from '../src/services/Generation.service.js';
+import redis from '../src/redis.js';
 
 console.log('🧪 Testing Mama Taxi Meme Generation (FEMALE)...\n');
 

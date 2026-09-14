@@ -11,23 +11,34 @@ export class PaymentCryptoService {
     }
 
     // Создание крипто-платежа
-    async createPayment({ userId, amount, payCurrency, package: pkg }) {
+    async createPayment({ userId, amount = 0.50, payCurrency, package: pkg = 'deposit' }) {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('🚀 [PaymentCrypto] Starting createPayment');
         console.log(`📊 Input: userId=${userId}, amount=${amount}, currency=${payCurrency}, package=${pkg}`);
         
         try {
+            // Валидация лимитов депозита: 0.50 - 10000.00 USDT
+            const numAmount = Number(amount || 0.50);
+            if (numAmount < 0.50 || numAmount > 10000.00) {
+                return { error: 'Сумма депозита должна быть от 0.50 до 10 000.00 USDT' };
+            }
+
             const orderService = new OrderService();
             
             // Проверка на существующий заказ
-            const userOrders = await orderService.getOrdersByUserId(userId);
-            const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
+            let existingOrder = null;
+            try {
+                const userOrders = await orderService.getOrdersByUserId(userId);
+                const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
 
-            const existingOrder = userOrders.find(order =>
-                order?.input?.amount === amount &&
-                new Date(order?.output?.expiredAt) < tenMinutesFromNow &&
-                order?.input?.payCurrency === payCurrency
-            );
+                existingOrder = userOrders.find(order =>
+                    order?.input?.amountUSD === numAmount &&
+                    new Date(order?.output?.expDate || order?.output?.expiredAt) > new Date() &&
+                    order?.input?.payCurrency === payCurrency
+                );
+            } catch (orderCheckErr) {
+                console.warn('⚠️ Could not check existing orders:', orderCheckErr.message);
+            }
 
             if (existingOrder) {
                 console.log(`♻️ Reusing existing order: ${existingOrder.orderId}`);
@@ -37,13 +48,23 @@ export class PaymentCryptoService {
             const orderId = orderService.generateOrderId('CRYPTO');
             console.log(`📝 Generated order ID: ${orderId}`);
 
+            // Нормализация валюты для 0xProcessing (BNB в 0xProcessing называется 'BNB', а не 'BNB (BEP20)')
+            const currencyForProcessing = payCurrency === 'BNB (BEP20)' ? 'BNB' : payCurrency;
+
             // Данные для 0xProcessing (БЕЗ amount - он рассчитается на их стороне)
+            const isStaging = process.env.NODE_ENV === 'staging' || process.env.BOT_NAME === 'meemee_official_bot';
+            const defaultWebhook = isStaging 
+                ? 'https://aiviral.agency/webhook/staging/crypto' 
+                : 'https://aiviral.agency/webhook/crypto';
+            const webhookUrl = process.env.CRYPTO_WEBHOOK_URL || defaultWebhook;
             const data = {
                 merchantID: this.merchant,
                 billingID: orderId,
-                currency: payCurrency,
+                currency: currencyForProcessing,
                 email: `user${userId}@viralapp.bot`,
-                clientId: userId.toString()
+                clientId: userId.toString(),
+                webhookUrl: webhookUrl,
+                callbackUrl: webhookUrl
             };
 
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -65,53 +86,26 @@ export class PaymentCryptoService {
 
             console.log('✅ [CRYPTO] Response received');
             console.log(`📥 Status: ${response.status}`);
-            console.log(`📥 Data:`, JSON.stringify(response.data, null, 2));
-            
-            // Расчёт суммы в криптовалюте ПОСЛЕ получения ответа
-            const amountInCrypto = new BigNumber(amount)
-                .div(payCurrency.includes('USDT') || payCurrency.includes('USDC') ? 1 : response.data.rate)
-                .toFixed(5);
-
-            data.amountUSD = amount;
-            data.amount = amountInCrypto;
-            data.package = pkg;
-            data.payCurrency = payCurrency;
-            data.createdAt = new Date().toISOString();
-
-            // Проверка минимальной суммы
-            try {
-                const coinInfoResponse = await axios.get(
-                    `${this.baseUrl}/Api/CoinInfo/${payCurrency}`
-                );
-                
-                if (coinInfoResponse.data && coinInfoResponse.data.min) {
-                    if (new BigNumber(data.amount).isLessThan(coinInfoResponse.data.min)) {
-                        console.log(`❌ Amount ${data.amount} < minimum ${coinInfoResponse.data.min}`);
-                        return { error: 'Сумма оплаты слишком мала для этой сети. Попробуйте другую.' };
-                    }
-                }
-            } catch (minCheckError) {
-                console.warn(`⚠️ Could not check minimum amount, skipping:`, minCheckError.message);
-            }
+            console.log(`📥 Data:`, typeof response.data === 'string' ? `(string, length ${response.data.length})` : JSON.stringify(response.data, null, 2));
 
             // Проверяем, вернулся ли HTML (redirect) или JSON
             let responseData = response.data;
             
             // Если получили JSON напрямую (новый формат API)
-            if (typeof responseData === 'object' && responseData.id) {
+            if (typeof responseData === 'object' && responseData !== null && (responseData.id || responseData.uid)) {
                 console.log('📦 Received JSON response (direct API format)');
                 console.log('📥 Data:', JSON.stringify(responseData, null, 2));
                 
-                // Преобразуем в нужный формат
-                const uid = responseData.id.toString();
+                // Преобразуем в нужный формат (без искусственного формирования 404 URL)
+                const uid = (responseData.id || responseData.uid).toString();
                 responseData = {
                     uid: uid,
                     id: uid,
-                    paymentUrl: `https://app.0xprocessing.com/payment/${uid}`,
+                    paymentUrl: responseData.paymentUrl || responseData.url || null,
                     address: responseData.address,
                     qrCode: responseData.qrCode,
-                    rate: responseData.rate,
-                    minimumAmount: responseData.minimumAmount,
+                    rate: responseData.rate ? parseFloat(responseData.rate) : null,
+                    minimumAmount: responseData.minimumAmount ? parseFloat(responseData.minimumAmount) : 0.50,
                     destinationTag: responseData.destinationTag,
                     expDate: responseData.expDate
                 };
@@ -154,11 +148,11 @@ export class PaymentCryptoService {
                     const uid = uidMatch[1];
                     console.log(`✅ Extracted UID: ${uid}`);
                     
-                    // Собираем данные из HTML
+                    // Собираем данные из HTML (без фиктивных 404 URL)
                     responseData = {
                         uid: uid,
                         id: uid,
-                        paymentUrl: `https://app.0xprocessing.com/payment/${uid}`,
+                        paymentUrl: null,
                         expDate: expDateMatch ? expDateMatch[1] : new Date(Date.now() + 30 * 60 * 1000).toISOString()
                     };
                     
@@ -170,7 +164,6 @@ export class PaymentCryptoService {
                     
                     // Добавляем QR-код если найден
                     if (qrCodeMatch && qrCodeMatch[1]) {
-                        // QR-код может быть экранирован, убираем лишние слэши
                         responseData.qrCode = qrCodeMatch[1].replace(/\\"/g, '"').replace(/\\\//g, '/');
                         console.log(`✅ Extracted QR code (length: ${responseData.qrCode.length})`);
                     }
@@ -193,12 +186,6 @@ export class PaymentCryptoService {
                         hasRate: !!responseData.rate,
                         hasMinAmount: !!responseData.minimumAmount
                     });
-                    
-                    // Если адрес не найден в HTML (старый формат)
-                    if (!responseData.address) {
-                        console.log('ℹ️ Payment address will be available on payment page');
-                        console.log(`🔗 Payment URL: ${responseData.paymentUrl}`);
-                    }
                 } else {
                     console.error('❌ Could not extract UID from HTML response');
                     return { error: 'Не удалось создать платеж. Попробуйте другую сеть.' };
@@ -206,6 +193,27 @@ export class PaymentCryptoService {
             } else {
                 console.log('📦 Received JSON response (old 0xProcessing format)');
             }
+
+            // Расчёт суммы в криптовалюте ПОСЛЕ извлечения курса
+            let amountInCrypto;
+            const isUsdPegged = payCurrency.includes('USDT') || payCurrency.includes('USDC');
+            if (isUsdPegged) {
+                amountInCrypto = new BigNumber(numAmount).toFixed(2);
+            } else {
+                const effectiveRate = responseData?.rate;
+                if (effectiveRate && !isNaN(effectiveRate) && Number(effectiveRate) > 0) {
+                    amountInCrypto = new BigNumber(numAmount).div(effectiveRate).toFixed(5);
+                } else {
+                    console.warn(`⚠️ Rate not available for ${payCurrency}, using default amount`);
+                    amountInCrypto = new BigNumber(numAmount).toFixed(5);
+                }
+            }
+
+            data.amountUSD = numAmount;
+            data.amount = amountInCrypto;
+            data.package = pkg;
+            data.payCurrency = payCurrency;
+            data.createdAt = new Date().toISOString();
             
             console.log(`📥 Final Data:`, JSON.stringify(responseData, null, 2));
 
@@ -218,13 +226,19 @@ export class PaymentCryptoService {
                 isPaid: false,
                 isFiat: false,
                 package: pkg,
-                amount: amount,
-                currency: payCurrency
+                amount: numAmount,
+                cryptoAmount: amountInCrypto,
+                currency: payCurrency,
+                createdAt: data.createdAt || new Date().toISOString()
             };
 
             console.log('💾 Saving order to database...');
-            await orderService.createOrder(orderData);
-            console.log(`✅ Order saved: ${orderId}`);
+            try {
+                await orderService.createOrder(orderData);
+                console.log(`✅ Order saved: ${orderId}`);
+            } catch (redisErr) {
+                console.warn('⚠️ Could not save order to Redis (offline mode):', redisErr.message);
+            }
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
             return orderData;
@@ -246,7 +260,7 @@ export class PaymentCryptoService {
         }
     }
 
-    // Проверка статуса платежа через API 0xProcessing
+    // Проверка статуса платежа через блокчейн (on-chain) и fallback на API 0xProcessing
     async checkPaymentStatus(orderId) {
         try {
             console.log(`🔍 [PaymentCrypto] Checking status for order: ${orderId}`);
@@ -261,48 +275,117 @@ export class PaymentCryptoService {
             
             if (order.isPaid) {
                 console.log(`✅ Order already marked as paid: ${orderId}`);
-                return { status: 'paid' };
+                return { status: 'paid', amount: Number(order.amount || 2.0) };
             }
 
-            // Проверяем через API 0xProcessing
+            const address = order.output?.address || order.output?.Address || order.output?.wallet;
+            const currency = (order.currency || order.input?.payCurrency || order.input?.currency || '').toUpperCase();
+            console.log(`📡 Checking order ${orderId}: address=${address}, currency=${currency}`);
+
+            // 1. Проверка on-chain в BSC (BEP-20 / BNB)
+            if (address && address.startsWith('0x')) {
+                // А. Проверка USDT (BEP-20)
+                try {
+                    const cleanAddress = address.toLowerCase().replace('0x', '').padStart(64, '0');
+                    const rpcResponse = await axios.post('https://bsc-dataseed1.binance.org/', {
+                        jsonrpc: '2.0',
+                        method: 'eth_call',
+                        params: [{
+                            to: '0x55d398326f99059ff775485246999027b3197955', // USDT BSC Contract
+                            data: `0x70a08231${cleanAddress}`
+                        }, 'latest'],
+                        id: 1
+                    }, { timeout: 7000 });
+
+                    if (rpcResponse.data?.result && rpcResponse.data.result !== '0x') {
+                        const hexVal = rpcResponse.data.result;
+                        const rawBalance = new BigNumber(hexVal, 16);
+                        const usdtBalance = rawBalance.dividedBy(new BigNumber(10).pow(18)).toNumber();
+                        console.log(`🔗 BSC on-chain USDT balance for ${address}: ${usdtBalance} USDT`);
+
+                        if (usdtBalance >= 0.5) {
+                            console.log(`✅ On-chain USDT payment confirmed! Balance: ${usdtBalance} USDT`);
+                            return { status: 'paid', amount: usdtBalance };
+                        }
+                    }
+                } catch (bscErr) {
+                    console.warn(`⚠️ BSC USDT check error:`, bscErr.message);
+                }
+
+                // Б. Проверка нативного BNB
+                if (currency.includes('BNB')) {
+                    try {
+                        const bnbResponse = await axios.post('https://bsc-dataseed1.binance.org/', {
+                            jsonrpc: '2.0',
+                            method: 'eth_getBalance',
+                            params: [address, 'latest'],
+                            id: 2
+                        }, { timeout: 7000 });
+
+                        if (bnbResponse.data?.result) {
+                            const rawBnb = new BigNumber(bnbResponse.data.result, 16);
+                            const bnbBalance = rawBnb.dividedBy(new BigNumber(10).pow(18)).toNumber();
+                            console.log(`🔗 BSC on-chain BNB balance for ${address}: ${bnbBalance} BNB`);
+
+                            if (bnbBalance >= 0.003) {
+                                console.log(`✅ On-chain BNB payment confirmed! Balance: ${bnbBalance} BNB`);
+                                return { status: 'paid', amount: Number(order.amount || 4.0) };
+                            }
+                        }
+                    } catch (bnbErr) {
+                        console.warn(`⚠️ BSC BNB check error:`, bnbErr.message);
+                    }
+                }
+            }
+
+            // 2. Проверка on-chain в Tron (TRC-20 USDT)
+            if (address && address.startsWith('T')) {
+                try {
+                    const tronResp = await axios.get(`https://apilist.tronscanapi.com/api/account?address=${address}`, { timeout: 7000 });
+                    if (tronResp.data?.trc20token_balances) {
+                        const usdtToken = tronResp.data.trc20token_balances.find(t => t.tokenId === 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t');
+                        if (usdtToken) {
+                            const tronBalance = Number(usdtToken.balance) / 1e6;
+                            console.log(`🔗 TRON on-chain USDT balance for ${address}: ${tronBalance} USDT`);
+                            if (tronBalance >= 0.5) {
+                                console.log(`✅ On-chain TRC20 USDT payment confirmed! Balance: ${tronBalance} USDT`);
+                                return { status: 'paid', amount: tronBalance };
+                            }
+                        }
+                    }
+                } catch (tronErr) {
+                    console.warn(`⚠️ Tron on-chain check error:`, tronErr.message);
+                }
+            }
+
+            // 3. Fallback: Проверка через API 0xProcessing
             try {
-                // Используем uid от 0xProcessing, а не наш orderId
                 const paymentUid = order.output?.uid || order.output?.id || orderId;
-                console.log(`📡 Calling 0xProcessing API to check status...`);
-                console.log(`   Using payment UID: ${paymentUid}`);
-                
                 const response = await axios.get(
                     `${this.baseUrl}/Api/PaymentStatus/${paymentUid}`,
                     {
                         headers: {
                             'Authorization': `Bearer ${this.api}`
                         },
-                        timeout: 10000
+                        timeout: 5000
                     }
                 );
 
-                console.log(`📥 API Response:`, response.data);
-
-                // Проверяем статус из ответа
                 const status = response.data?.status || response.data?.Status;
-                
                 if (status && (
                     status.toLowerCase() === 'success' || 
                     status.toLowerCase() === 'paid' || 
                     status.toLowerCase() === 'completed'
                 )) {
                     console.log(`✅ Payment confirmed by API: ${orderId}`);
-                    return { status: 'paid' };
+                    return { status: 'paid', amount: Number(response.data?.AmountUSD || order.amount || 2.0) };
                 }
-
-                console.log(`⏳ Payment still pending: ${orderId}`);
-                return { status: 'pending' };
-
             } catch (apiErr) {
-                console.error(`⚠️ API check failed:`, apiErr.message);
-                // Если API недоступен, возвращаем pending
-                return { status: 'pending' };
+                // API 404 is normal if endpoint is deprecated; on-chain check was already performed
             }
+
+            console.log(`⏳ Payment still pending: ${orderId}`);
+            return { status: 'pending' };
 
         } catch (err) {
             console.error('❌ Error checking payment status:', err);

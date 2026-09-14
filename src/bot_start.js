@@ -1,5 +1,7 @@
 import 'dotenv/config';
+import fs from 'fs';
 import { Telegraf, Scenes, session, Markup } from 'telegraf';
+import redis from './redis.js';
 import { UserService } from './services/User.service.js';
 import { OrderService } from './services/Order.service.js';
 import { PaymentCryptoService } from './services/PaymentCrypto.service.js';
@@ -8,7 +10,7 @@ import { GenerationService } from './services/Generation.service.js';
 import { ReferralService } from './services/Referral.service.js';
 import { SubscriptionService } from './services/Subscription.service.js';
 import { errorLogger } from './services/ErrorLogger.service.js';
-import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_BONUS, EXPERT_CASHBACK_PERCENT, BACK_TO_MENU, GENDER_CHOICE, CONFIRM_GENERATION } from './config.js';
+import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_BONUS, EXPERT_CASHBACK_PERCENT, BACK_TO_MENU, GENDER_CHOICE, CONFIRM_GENERATION, GENERATION_COST_USDT, NO_BALANCE_KEYBOARD, getMainMenuText } from './config.js';
 import { 
     createCatalogKeyboard, 
     createCryptoKeyboard, 
@@ -18,6 +20,8 @@ import {
     createMainMenuKeyboard
 } from './screens/keyboards.js';
 import { getMemeById } from './utils/memeLoader.js';
+import { registerSocialGiftHandlers } from './handlers/user_handlers/social_gift_handler.js';
+import { registerUserMenuHandlers, handleProfile, handleWithdraw } from './handlers/user_handlers/user_menu.js';
 
 // Проверка токена бота
 if (!process.env.BOT_TOKEN) {
@@ -78,6 +82,10 @@ bot.action('show_full_guide', async (ctx) => {
 // Session middleware
 bot.use(session());
 
+// Регистрация обработчиков соцсетей и меню пользователя
+registerSocialGiftHandlers(bot);
+registerUserMenuHandlers(bot);
+
 // Helper функция для безопасного answerCbQuery
 async function safeAnswerCbQuery(ctx, text = undefined, options = {}) {
     try {
@@ -92,7 +100,32 @@ async function safeAnswerCbQuery(ctx, text = undefined, options = {}) {
     }
 }
 
-// Вайтлист убран - бот доступен всем пользователям
+// Проверка доступа к Staging-боту (@meemee_official_bot)
+const isStaging = process.env.NODE_ENV === 'staging' || process.env.BOT_NAME === 'meemee_official_bot';
+const STAGING_ALLOWED_IDS = [1916527652, 7937165663];
+const STAGING_ALLOWED_USERNAMES = ['aiviral_main', 'i_prokhorovich'];
+
+bot.use(async (ctx, next) => {
+    if (isStaging) {
+        const userId = ctx.from?.id;
+        const username = (ctx.from?.username || '').toLowerCase().replace('@', '');
+        const isAllowed = STAGING_ALLOWED_IDS.includes(userId) || STAGING_ALLOWED_USERNAMES.includes(username);
+
+        if (!isAllowed) {
+            console.log(`🔒 Staging access denied for user ${userId} (@${username || 'no_username'})`);
+            if (ctx.callbackQuery) {
+                return await safeAnswerCbQuery(ctx, '🔒 Бот находится в режиме закрытого тестирования.', { show_alert: true });
+            }
+            return await ctx.reply(
+                '🔒 <b>Тестовый бот (Staging)</b>\n\n' +
+                'Этот бот находится на этапе закрытого тестирования.\n' +
+                'Доступ разрешен только разработчикам.',
+                { parse_mode: 'HTML' }
+            );
+        }
+    }
+    return await next();
+});
 
 // Middleware для обновления username
 bot.use(async (ctx, next) => {
@@ -130,6 +163,27 @@ bot.use(async (ctx, next) => {
     await next();
     const ms = Date.now() - start;
     console.log(`⏱️ Response time: ${ms}ms`);
+});
+
+// Middleware для сбора аналитики кликов по кнопкам (TASK-21 / Analytics Heatmap)
+bot.use(async (ctx, next) => {
+    try {
+        if (ctx.callbackQuery && ctx.callbackQuery.data) {
+            const cbData = ctx.callbackQuery.data;
+            const today = new Date().toISOString().split('T')[0];
+            const userId = ctx.from?.id;
+
+            Promise.all([
+                redis.hincrby('analytics:clicks:total', cbData, 1),
+                redis.hincrby(`analytics:clicks:daily:${today}`, cbData, 1),
+                redis.hincrby('analytics:clicks:summary', 'total_clicks', 1),
+                userId ? redis.pfadd('analytics:clicks:hll:users', userId.toString()) : null
+            ]).catch(err => console.warn('⚠️ Click analytics tracking error:', err.message));
+        }
+    } catch (err) {
+        console.warn('⚠️ Click tracking error:', err.message);
+    }
+    await next();
 });
 
 // Обработка команды /start
@@ -178,7 +232,7 @@ bot.start(async (ctx) => {
                     try {
                         await bot.telegram.sendMessage(
                             referrerId,
-                            `🎉 По вашей ссылке зарегистрировался новый пользователь!\n\n+${REFERRAL_BONUS} бесплатная генерация добавлена на ваш баланс!`
+                            `🎉 По вашей ссылке зарегистрировался новый пользователь!`
                         );
                     } catch (notifyErr) {
                         console.log(`Failed to notify referrer ${referrerId}:`, notifyErr.message);
@@ -189,11 +243,17 @@ bot.start(async (ctx) => {
                 const success = await referralService.processExpertReferral(expertId, userId);
                 
                 if (success) {
+                    // Уведомляем нового пользователя о бонусе
+                    await ctx.reply(
+                        `🎉 Добро пожаловать!\n\nВы получили +${REFERRAL_BONUS} бесплатную генерацию за переход по реферальной ссылке!`
+                    );
+                    showWelcome = false;
+
                     // Уведомляем эксперта
                     try {
                         await bot.telegram.sendMessage(
                             expertId,
-                            `💼 По вашей экспертной ссылке зарегистрировался новый пользователь!\n\n💰 Вы будете получать ${EXPERT_CASHBACK_PERCENT}% с каждой его оплаты!`
+                            `💼 По вашей партнерской ссылке зарегистрировался новый пользователь!\n\n💰 Вы будете получать 25% с каждой его оплаты (и 10% со 2-й линии)!`
                         );
                     } catch (notifyErr) {
                         console.log(`Failed to notify expert ${expertId}:`, notifyErr.message);
@@ -204,19 +264,18 @@ bot.start(async (ctx) => {
 
         // Отправка приветственного сообщения
         if (showWelcome && isNewUser) {
-            // Для новых пользователей отправляем приветственное изображение
+            // Для новых пользователей отправляем приветственное изображение и очищаем старую клавиатуру
             try {
+                await ctx.reply('✨ Загружаем...', { reply_markup: { remove_keyboard: true } });
                 await ctx.replyWithPhoto(
                     { source: './media/start.png' },
                     {
                         caption: MESSAGES.WELCOME,
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [
-                                [{ text: 'START' }]
-                            ],
-                            resize_keyboard: true,
-                            one_time_keyboard: true
+                            inline_keyboard: [
+                                [{ text: '🚀 START', callback_data: 'main_menu' }]
+                            ]
                         }
                     }
                 );
@@ -225,18 +284,19 @@ bot.start(async (ctx) => {
                 await ctx.reply(MESSAGES.WELCOME, { 
                     parse_mode: 'Markdown',
                     reply_markup: {
-                        keyboard: [
-                            [{ text: 'START' }]
-                        ],
-                        resize_keyboard: true,
-                        one_time_keyboard: true
+                        inline_keyboard: [
+                            [{ text: '🚀 START', callback_data: 'main_menu' }]
+                        ]
                     }
                 });
             }
         } else {
-            // Для существующих пользователей всегда показываем главное меню
-            const mainMenu = await createMainMenuKeyboard(userId);
-            await ctx.reply(MESSAGES.MAIN_MENU, { 
+            // Для существующих пользователей всегда показываем главное меню с балансом
+            const user = existingUser || await userService.getUser(userId);
+            const mainMenu = await createMainMenuKeyboard(user || userId);
+            const menuText = getMainMenuText(user);
+            await ctx.reply(menuText, { 
+                parse_mode: 'Markdown',
                 reply_markup: mainMenu
             });
         }
@@ -289,13 +349,17 @@ bot.action('main_menu', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
         const mainMenu = await createMainMenuKeyboard(userId);
-        await ctx.editMessageText(MESSAGES.MAIN_MENU, { reply_markup: mainMenu });
+        const menuText = getMainMenuText(user);
+        await ctx.editMessageText(menuText, { parse_mode: 'Markdown', reply_markup: mainMenu });
     } catch (err) {
         await safeAnswerCbQuery(ctx);
         const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
         const mainMenu = await createMainMenuKeyboard(userId);
-        await ctx.reply(MESSAGES.MAIN_MENU, { reply_markup: mainMenu });
+        const menuText = getMainMenuText(user);
+        await ctx.reply(menuText, { parse_mode: 'Markdown', reply_markup: mainMenu });
     }
 });
 
@@ -458,43 +522,195 @@ bot.action('prompt_guide', async (ctx) => {
     }
 });
 
-// Обработка кнопки создания видео
+// Вспомогательная функция отображения меню создания видео
+async function showCreateVideoMenu(ctx) {
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
+            [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
+            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
+        ]
+    };
+
+    try {
+        await ctx.editMessageText(MESSAGES.CREATE_VIDEO_MENU, {
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true,
+            reply_markup: keyboard
+        });
+    } catch (editErr) {
+        await ctx.reply(MESSAGES.CREATE_VIDEO_MENU, {
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true,
+            reply_markup: keyboard
+        });
+    }
+}
+
+// Обработка кнопки бесплатной генерации
+bot.action('create_video_free', async (ctx) => {
+    try {
+        await safeAnswerCbQuery(ctx);
+        const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        if (freeQuota <= 0) {
+            if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+                ctx.session.generationMode = 'paid';
+                return await showCreateVideoMenu(ctx);
+            }
+            try {
+                return await ctx.editMessageText(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+            } catch {
+                return await ctx.reply(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+            }
+        }
+
+        ctx.session.generationMode = 'free';
+
+        // Проверяем обязательную подписку на канал для бесплатного режима
+        const isSubscribed = await subscriptionService.checkSubscription(userId);
+        if (!isSubscribed) {
+            const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+            await ctx.editMessageText(
+                subscriptionService.getSubscriptionMessage(),
+                { 
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ 
+                                text: '✅ Подписаться', 
+                                url: `https://t.me/${channelName}` 
+                            }],
+                            [{ 
+                                text: '✔️ Я подписался, проверить', 
+                                callback_data: 'check_subscription' 
+                            }],
+                            [{ 
+                                text: '🔙 Главное меню', 
+                                callback_data: 'main_menu' 
+                            }]
+                        ]
+                    }
+                }
+            );
+            return;
+        }
+
+        await showCreateVideoMenu(ctx);
+    } catch (err) {
+        console.error('❌ Error in create_video_free:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+});
+
+// Обработка кнопки платной генерации
+bot.action('create_video_paid', async (ctx) => {
+    try {
+        await safeAnswerCbQuery(ctx);
+        const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            ctx.session.generationMode = 'paid';
+            return await showCreateVideoMenu(ctx);
+        }
+
+        if (freeQuota > 0) {
+            ctx.session.generationMode = 'free';
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                return await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+                            ]
+                        }
+                    }
+                );
+            }
+            return await showCreateVideoMenu(ctx);
+        }
+
+        // Если баланс и квоты нулевые (TASK-15)
+        try {
+            await ctx.editMessageText(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+        } catch {
+            await ctx.reply(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
+        }
+    } catch (err) {
+        console.error('❌ Error in create_video_paid:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+});
+
+// Обработка единого действия создания видео (РОУТЕР КВОТ И БАЛАНСА TASK-15)
 bot.action('create_video', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
-        
-        // Пытаемся отредактировать, если не получается - отправляем новое сообщение
+        const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        // 1. Если free_quota > 0 -> расходовать бесплатную квоту
+        if (freeQuota > 0) {
+            ctx.session.generationMode = 'free';
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
+            await showCreateVideoMenu(ctx);
+            return;
+        }
+
+        // 2. Если paid_quota > 0 или wallet_balance_usdt >= 0.84 -> расходовать платную квоту / баланс
+        if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            ctx.session.generationMode = 'paid';
+            await showCreateVideoMenu(ctx);
+            return;
+        }
+
+        // 3. Если баланс и квоты нулевые -> при нажатии «🎬 Сгенерировать видео» бот отправляет сообщение:
+        // «🎬 Для генерации видео необходимо пополнить баланс» + кнопка [💳 Пополнить баланс] (callback: buy)
         try {
-            await ctx.editMessageText(
-                MESSAGES.CREATE_VIDEO_MENU,
-                {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
-                            [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    }
-                }
-            );
-        } catch (editErr) {
-            // Если не получилось отредактировать (например, это видео), отправляем новое сообщение
-            await ctx.reply(
-                MESSAGES.CREATE_VIDEO_MENU,
-                {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '✍️ Написать свой промпт', callback_data: 'custom_prompt' }],
-                            [{ text: '📝 Использовать шаблон', callback_data: 'catalog' }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    }
-                }
-            );
+            await ctx.editMessageText(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        } catch {
+            await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
         }
     } catch (err) {
         console.error('❌ Error in create_video:', err);
@@ -505,50 +721,44 @@ bot.action('create_video', async (ctx) => {
 bot.action('custom_prompt', async (ctx) => {
     try {
         await safeAnswerCbQuery(ctx);
-        
-        // Проверяем подписку на канал
         const userId = ctx.from.id;
-        const isSubscribed = await subscriptionService.checkSubscription(userId);
-        
-        if (!isSubscribed) {
-            // Показываем предложение подписаться
-            await ctx.editMessageText(
-                subscriptionService.getSubscriptionMessage(),
-                { 
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ 
-                                text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_official'}` 
-                            }],
-                            [{ 
-                                text: '✔️ Я подписался, проверить', 
-                                callback_data: 'check_subscription' 
-                            }],
-                            [{ 
-                                text: '🔙 Назад', 
-                                callback_data: 'create_video' 
-                            }]
-                        ]
-                    }
-                }
-            );
-            return;
-        }
-        
-        // Проверяем квоту перед началом
-        const hasQuota = await userService.hasQuota(userId);
-        
-        if (!hasQuota) {
-            await ctx.editMessageText(MESSAGES.NO_QUOTA, {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
-                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                    ]
-                }
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            return await ctx.editMessageText(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
             });
-            return;
+        }
+        ctx.session.generationMode = mode;
+
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
         }
         
         // Сразу переходим к вводу промпта
@@ -642,101 +852,99 @@ bot.action(/meme_(.+)/, async (ctx) => {
             return await safeAnswerCbQuery(ctx, MESSAGES.MEME_SOON, { show_alert: true });
         }
         
-        await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
-        
-        // Проверяем подписку на канал
+        await safeAnswerCbQuery(ctx);
         const userId = ctx.from.id;
-        const isSubscribed = await subscriptionService.checkSubscription(userId);
-        
-        if (!isSubscribed) {
-            // Показываем предложение подписаться
-            await ctx.editMessageText(
-                subscriptionService.getSubscriptionMessage(),
-                { 
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ 
-                                text: '✅ Подписаться', 
-                                url: `https://t.me/${process.env.REQUIRED_CHANNEL?.replace('@', '') || 'aiviral_official'}` 
-                            }],
-                            [{ 
-                                text: '✔️ Я подписался, проверить', 
-                                callback_data: 'check_subscription' 
-                            }],
-                            [{ 
-                                text: '🔙 Назад', 
-                                callback_data: 'catalog' 
-                            }]
-                        ]
-                    }
-                }
-            );
-            return;
-        }
-        
-        // Проверяем квоту
-        const hasQuota = await userService.hasQuota(userId);
-        
-        if (!hasQuota) {
-            await ctx.editMessageText(MESSAGES.NO_QUOTA, {
+        const user = await userService.getUser(userId);
+        ctx.session = ctx.session || {};
+
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            return await ctx.editMessageText(MESSAGES.NO_BALANCE, {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '🎬 Сгенерировать видео', callback_data: 'buy' }],
+                        [{ text: '💳 Пополнить баланс', callback_data: 'buy' }],
                         [{ text: '🔙 Назад', callback_data: 'catalog' }]
                     ]
                 }
             });
-            return;
+        }
+        ctx.session.generationMode = mode;
+
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                const channelName = (process.env.REQUIRED_CHANNEL || '@aiviral_media').replace('@', '');
+                await ctx.editMessageText(
+                    subscriptionService.getSubscriptionMessage(),
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Подписаться', url: `https://t.me/${channelName}` }],
+                                [{ text: '✔️ Я подписался, проверить', callback_data: 'check_subscription' }],
+                                [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
         }
         
         // Сохраняем выбранный мем в контексте (для дальнейших шагов)
         ctx.session = ctx.session || {};
         ctx.session.selectedMeme = memeId;
         
-        // Отправляем медиа-группу и текст с кнопкой
-        if (memeId === 'mama_taxi' || memeId === 'mama_call') {
-            try {
-                // Отправляем медиа-группу (видео + фото с описанием)
-                await ctx.replyWithMediaGroup([
-                    {
+        // Отправляем медиа-группу и текст с кнопкой динамически из конфигурации шаблона
+        try {
+            const mediaCaption = meme.media?.caption || (meme.media?.views_badge ? `*${meme.name}*\n${meme.media.views_badge}` : `*${meme.name}*`);
+            const mediaItems = [];
+            if (meme && meme.media) {
+                if (meme.media.video && fs.existsSync(meme.media.video)) {
+                    mediaItems.push({
                         type: 'video',
-                        media: { source: './media/mother.MP4' }
-                    },
-                    {
+                        media: { source: meme.media.video }
+                    });
+                }
+                if (meme.media.statistic && fs.existsSync(meme.media.statistic)) {
+                    mediaItems.push({
                         type: 'photo',
-                        media: { source: './media/statistic.jpeg' },
-                        caption: `*${meme.name}*`,
+                        media: { source: meme.media.statistic },
+                        caption: mediaCaption,
                         parse_mode: 'Markdown'
-                    }
-                ]);
-                
-                // Отправляем призыв с кнопкой
-                await ctx.reply(MESSAGES.ENTER_NAME, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                        ]
-                    }
-                });
-            } catch (mediaErr) {
-                console.log('⚠️ Failed to send media files:', mediaErr.message);
+                    });
+                }
             }
-        } else if (memeId === '228') {
-            try {
-                // Отправляем медиа-группу (видео + фото с описанием)
-                await ctx.replyWithMediaGroup([
+            
+            if (mediaItems.length > 0) {
+                await ctx.replyWithMediaGroup(mediaItems);
+            }
+            
+            if (meme.auto_generate) {
+                delete ctx.session.waitingFor;
+                ctx.session.memeId = memeId;
+                await ctx.reply(
+                    '🎬 <b>Автоматическая генерация видео</b>\n\n' +
+                    'Видео будет сгенерировано автоматически по популярному тренду.\n\n' +
+                    '👇 Нажмите кнопку ниже для запуска:',
                     {
-                        type: 'video',
-                        media: { source: './media/mopsvideo.mp4' }
-                    },
-                    {
-                        type: 'photo',
-                        media: { source: './media/mops.jpeg' },
-                        caption: `*${meme.name}*`,
-                        parse_mode: 'Markdown'
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🎬 Сгенерировать видео', callback_data: `generate_auto_${memeId}` }],
+                                [{ text: '🔙 Назад к каталогу', callback_data: 'catalog' }]
+                            ]
+                        }
                     }
-                ]);
-                
+                );
+            } else {
                 // Отправляем призыв с кнопкой
                 await ctx.reply(MESSAGES.ENTER_NAME, {
                     reply_markup: {
@@ -745,18 +953,125 @@ bot.action(/meme_(.+)/, async (ctx) => {
                         ]
                     }
                 });
-            } catch (mediaErr) {
-                console.log('⚠️ Failed to send media files:', mediaErr.message);
+                // Устанавливаем флаг ожидания ввода имени
+                ctx.session.waitingFor = 'name';
+                ctx.session.memeId = memeId;
+            }
+        } catch (mediaErr) {
+            console.log('⚠️ Failed to send media files:', mediaErr.message);
+            if (meme.auto_generate) {
+                delete ctx.session.waitingFor;
+                ctx.session.memeId = memeId;
+                await ctx.reply(
+                    '🎬 <b>Автоматическая генерация видео</b>\n\n' +
+                    'Видео будет сгенерировано автоматически по популярному тренду.\n\n' +
+                    '👇 Нажмите кнопку ниже для запуска:',
+                    {
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🎬 Сгенерировать видео', callback_data: `generate_auto_${memeId}` }],
+                                [{ text: '🔙 Назад к каталогу', callback_data: 'catalog' }]
+                            ]
+                        }
+                    }
+                );
+            } else {
+                await ctx.reply(MESSAGES.ENTER_NAME, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                        ]
+                    }
+                });
+                ctx.session.waitingFor = 'name';
+                ctx.session.memeId = memeId;
             }
         }
-        
-        // Устанавливаем флаг ожидания ввода имени
-        ctx.session.waitingFor = 'name';
-        ctx.session.memeId = memeId;
         
     } catch (err) {
         console.error('❌ Error selecting meme:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+});
+
+// Обработка кнопки запуска автоматической генерации (TASK: Чебурашка и Гена)
+bot.action(/generate_auto_(.+)/, async (ctx) => {
+    try {
+        await safeAnswerCbQuery(ctx);
+        const memeId = ctx.match[1];
+        const meme = getMemeById(memeId);
+        if (!meme) {
+            return await ctx.reply('❌ Шаблон не найден.');
+        }
+
+        const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        // Роутер квот и баланса
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        }
+
+        // Если бесплатный режим - строгая проверка подписки перед списанием
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                return await ctx.reply(
+                    subscriptionService.getNotSubscribedMessage(),
+                    { reply_markup: subscriptionService.getNotSubscribedKeyboard() }
+                );
+            }
+        }
+
+        // Списываем через единый роутер
+        const deductResult = await userService.deductGenerationCost(userId);
+        if (!deductResult.success) {
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        }
+
+        const promptText = typeof meme.prompt === 'string' ? meme.prompt : (meme.prompt?.text || meme.prompt);
+
+        // Создаём генерацию
+        const generation = await generationService.createGeneration({
+            userId,
+            chatId: ctx.chat.id,
+            memeId: meme.id,
+            name: meme.name,
+            gender: 'male',
+            customPrompt: promptText,
+            deductedType: deductResult.type
+        });
+
+        if (generation.error) {
+            await userService.refundGenerationCost(userId, deductResult.type);
+            return await ctx.reply('❌ Ошибка создания генерации: ' + generation.error);
+        }
+
+        await ctx.reply(MESSAGES.GENERATION_STARTED(meme.name), {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '✨ Создать еще', callback_data: 'create_video' }],
+                    [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
+                ]
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ Error in generate_auto handler:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка при запуске генерации');
     }
 });
 
@@ -772,17 +1087,16 @@ bot.on('text', async (ctx) => {
             await userService.createUser(ctx.from);
             
             try {
+                await ctx.reply('✨ Загружаем...', { reply_markup: { remove_keyboard: true } });
                 await ctx.replyWithPhoto(
                     { source: './media/start.png' },
                     {
                         caption: MESSAGES.WELCOME,
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [
-                                [{ text: 'START' }]
-                            ],
-                            resize_keyboard: true,
-                            one_time_keyboard: true
+                            inline_keyboard: [
+                                [{ text: '🚀 START', callback_data: 'main_menu' }]
+                            ]
                         }
                     }
                 );
@@ -791,11 +1105,9 @@ bot.on('text', async (ctx) => {
                 await ctx.reply(MESSAGES.WELCOME, { 
                     parse_mode: 'Markdown',
                     reply_markup: {
-                        keyboard: [
-                            [{ text: 'START' }]
-                        ],
-                        resize_keyboard: true,
-                        one_time_keyboard: true
+                        inline_keyboard: [
+                            [{ text: '🚀 START', callback_data: 'main_menu' }]
+                        ]
                     }
                 });
             }
@@ -826,11 +1138,40 @@ bot.on('text', async (ctx) => {
             }
             
             const userId = ctx.from.id;
-            
-            // Списываем квоту
-            const deducted = await userService.deductQuota(userId);
-            if (!deducted) {
-                return await ctx.reply('❌ Недостаточно генераций');
+            const user = await userService.getUser(userId);
+            const freeQuota = user?.free_quota || 0;
+            const paidQuota = user?.paid_quota || 0;
+            const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+            // Роутер квот и баланса (TASK-15)
+            let mode = 'free';
+            if (freeQuota > 0) {
+                mode = 'free';
+            } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+                mode = 'paid';
+            } else {
+                return await ctx.reply(MESSAGES.NO_BALANCE, {
+                    reply_markup: NO_BALANCE_KEYBOARD
+                });
+            }
+
+            // Если бесплатный режим - строгая проверка подписки перед списанием
+            if (mode === 'free') {
+                const isSubscribed = await subscriptionService.checkSubscription(userId);
+                if (!isSubscribed) {
+                    return await ctx.reply(
+                        subscriptionService.getNotSubscribedMessage(),
+                        { reply_markup: subscriptionService.getNotSubscribedKeyboard() }
+                    );
+                }
+            }
+
+            // Списываем через единый роутер
+            const deductResult = await userService.deductGenerationCost(userId);
+            if (!deductResult.success) {
+                return await ctx.reply(MESSAGES.NO_BALANCE, {
+                    reply_markup: NO_BALANCE_KEYBOARD
+                });
             }
             
             // Создаём генерацию с пользовательским промптом
@@ -840,12 +1181,13 @@ bot.on('text', async (ctx) => {
                 memeId: 'custom',
                 name: 'Custom',
                 gender: 'male',
-                customPrompt: prompt
+                customPrompt: prompt,
+                deductedType: deductResult.type
             });
             
             if (generation.error) {
-                // Возвращаем квоту при ошибке
-                await userService.refundQuota(userId);
+                // Возвращаем средства при ошибке
+                await userService.refundGenerationCost(userId, deductResult.type);
                 return await ctx.reply('❌ Ошибка создания генерации: ' + generation.error);
             }
             
@@ -899,10 +1241,10 @@ bot.on('text', async (ctx) => {
             
             const userId = ctx.from.id;
             
-            // Списываем квоту
-            const deducted = await userService.deductQuota(userId);
-            if (!deducted) {
-                return await ctx.reply('❌ Недостаточно бесплатных генераций');
+            // Списываем через единый роутер
+            const deductResult = await userService.deductGenerationCost(userId);
+            if (!deductResult.success) {
+                return await ctx.reply(MESSAGES.NO_BALANCE, { reply_markup: NO_BALANCE_KEYBOARD });
             }
             
             // Создаём генерацию с пользовательским промптом
@@ -912,12 +1254,13 @@ bot.on('text', async (ctx) => {
                 memeId: 'custom',
                 name: 'Custom',
                 gender: 'male',
-                customPrompt: prompt
+                customPrompt: prompt,
+                deductedType: deductResult.type
             });
             
             if (generation.error) {
                 // Возвращаем квоту при ошибке
-                await userService.refundQuota(userId);
+                await userService.refundGenerationCost(userId, deductResult.type);
                 return await ctx.reply('❌ Ошибка создания генерации: ' + generation.error);
             }
             
@@ -958,17 +1301,18 @@ bot.on('text', async (ctx) => {
             
         } else if (ctx.session.waitingFor === 'email') {
             // Обработка ввода email для оплаты картой
-            const email = ctx.message.text.trim();
+            const email = ctx.message.text.trim().toLowerCase();
             
-            // Простая валидация email
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            // RFC-совместимая валидация email
+            const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
             if (!emailRegex.test(email)) {
                 return await ctx.reply(
                     MESSAGES.EMAIL_INVALID,
                     {
                         reply_markup: {
                             inline_keyboard: [
-                                [{ text: '⏪ Вернуться назад', callback_data: `select_package_${ctx.session.selectedPackage || 'single'}` }]
+                                [{ text: '⚡ Оплатить в 1 клик (без ввода email)', callback_data: `pay_card_oneclick_${ctx.session.selectedPackage || 'single'}` }],
+                                [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${ctx.session.selectedPackage || 'single'}` }]
                             ]
                         }
                     }
@@ -994,16 +1338,18 @@ bot.on('text', async (ctx) => {
                 return await ctx.reply('❌ Ошибка создания платежа: ' + payment.error);
             }
             
+            const paymentUrl = payment.output?.paymentUrl || payment.output?.payUrl || payment.output?.url;
+            
             await ctx.reply(
                 MESSAGES.PAYMENT_CARD_CONFIRM(pkg),
                 {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: '✅ Оплатить', url: payment.output.paymentUrl }],
-                            [{ text: '📝 Договор-оферта', url: 'https://telegra.ph/Dogovor-oferta-11-04' }],
-                            [{ text: '📝 Политика конфиденциальности', url: 'https://telegra.ph/Politika-konfidencialnosti-11-04' }],
+                            [{ text: '💳 Оплатить картой', url: paymentUrl }],
+                            [{ text: '📝 Договор-оферта', url: 'https://aiviral.agency/dogovor-oferta/' }],
+                            [{ text: '📝 Политика конфиденциальности', url: 'https://aiviral.agency/politika-konfidencialnosti/' }],
                             [{ text: '❓ Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'aiviral_manager'}` }],
-                            [{ text: '⏪ Вернуться назад', callback_data: `select_package_${packageKey}` }]
+                            [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
                         ]
                     }
                 }
@@ -1044,11 +1390,43 @@ bot.action('confirm_gen', async (ctx) => {
         const memeId = ctx.session.memeId;
         const name = ctx.session.generationName;
         const gender = ctx.session.generationGender;
-        
-        // Списываем квоту
-        const deducted = await userService.deductQuota(userId);
-        if (!deducted) {
-            return await safeAnswerCbQuery(ctx, 'Недостаточно генераций', { show_alert: true });
+
+        const user = await userService.getUser(userId);
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            await safeAnswerCbQuery(ctx, 'Для генерации видео необходимо пополнить баланс', { show_alert: true });
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        }
+
+        // Если бесплатный режим - строгая живая проверка подписки прямо перед запуском нейросети
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                await safeAnswerCbQuery(ctx, '❌ Нужна подписка на канал', { show_alert: true });
+                return await ctx.editMessageText(
+                    subscriptionService.getNotSubscribedMessage(),
+                    { reply_markup: subscriptionService.getNotSubscribedKeyboard() }
+                );
+            }
+        }
+
+        // Списываем через единый роутер (TASK-15)
+        const deductResult = await userService.deductGenerationCost(userId);
+        if (!deductResult.success) {
+            await safeAnswerCbQuery(ctx, 'Недостаточно средств на балансе', { show_alert: true });
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
         }
         
         // Создаём генерацию
@@ -1057,12 +1435,13 @@ bot.action('confirm_gen', async (ctx) => {
             chatId: ctx.chat.id, // Добавляем chatId для уведомлений
             memeId,
             name,
-            gender
+            gender,
+            deductedType: deductResult.type
         });
         
         if (generation.error) {
             // Возвращаем квоту при ошибке
-            await userService.refundQuota(userId);
+            await userService.refundGenerationCost(userId, deductResult.type);
             return await safeAnswerCbQuery(ctx, 'Ошибка создания генерации', { show_alert: true });
         }
         
@@ -1207,7 +1586,7 @@ async function waitForGeneration(ctx, generationId, quickCheckAttempts = 10) {
             }
             
             try {
-                await ctx.replyWithVideo(
+                const sentVideo = await ctx.replyWithVideo(
                     { url: generation.videoUrl },
                     { 
                         caption: '✅ Ваше видео готово!\n\n🎬 Генерация успешно завершена!',
@@ -1220,6 +1599,11 @@ async function waitForGeneration(ctx, generationId, quickCheckAttempts = 10) {
                         }
                     }
                 );
+                if (sentVideo?.video?.file_id) {
+                    await generationService.updateGeneration(generation.generationId, {
+                        telegramFileId: sentVideo.video.file_id
+                    });
+                }
             } catch (err) {
                 await ctx.reply(
                     '✅ Ваше видео готово!\n\n🎬 Генерация успешно завершена!\n\n' +
@@ -1272,6 +1656,14 @@ bot.on('inline_query', async (ctx) => {
     try {
         const userId = ctx.from.id;
         const query = ctx.inlineQuery.query.trim();
+        const botName = process.env.BOT_NAME || 'viralapp_official_bot';
+        const referralLink = `https://t.me/${botName}?start=expert_${userId}`;
+        const shareCaption = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:\n🚀 ${referralLink}`;
+        const shareKeyboard = {
+            inline_keyboard: [
+                [{ text: '⚡ Создать своё видео', url: referralLink }]
+            ]
+        };
         
         console.log(`🔍 Inline query from user ${userId}, query: "${query}"`);
         
@@ -1283,23 +1675,29 @@ bot.on('inline_query', async (ctx) => {
         
         // Если есть query (ID генерации), ищем конкретное видео
         if (query) {
-            targetVideo = generations.find(g => g.generationId === query && g.status === 'done' && g.videoUrl);
+            targetVideo = generations.find(g => g.generationId === query && g.status === 'done' && (g.telegramFileId || g.videoUrl));
+            if (!targetVideo) {
+                const gen = await generationService.getGeneration(query);
+                if (gen && gen.status === 'done' && (gen.telegramFileId || gen.videoUrl)) {
+                    targetVideo = gen;
+                }
+            }
             console.log(`🎯 Looking for specific video: ${query}`);
         }
         
         // Если не нашли конкретное видео или query пустой, берем последнее
         if (!targetVideo) {
-            targetVideo = generations.find(g => g.status === 'done' && g.videoUrl);
+            targetVideo = generations.find(g => g.status === 'done' && (g.telegramFileId || g.videoUrl));
             console.log(`📹 Using last video as fallback`);
         }
         
         if (!targetVideo) {
             console.log('❌ No completed video found for inline query');
-            // Отправляем пустой результат с сообщением
+            // Отправляем пустой результат с сообщением и реферальной ссылкой
             return await ctx.answerInlineQuery([], {
                 cache_time: 0,
-                switch_pm_text: 'Создать видео',
-                switch_pm_parameter: 'create'
+                switch_pm_text: '⚡ Создать своё видео',
+                switch_pm_parameter: `ref_${userId}`
             });
         }
         
@@ -1316,14 +1714,10 @@ bot.on('inline_query', async (ctx) => {
                 type: 'video',
                 id: targetVideo.generationId,
                 video_file_id: targetVideo.telegramFileId,
-                title: `🎬 ${targetVideo.memeName}`,
-                description: `Видео с именем: ${targetVideo.name}`,
-                caption: `🎬 Смотри какое крутое видео я создал в @${process.env.BOT_NAME}!\n\n✨ Ты тоже можешь создать своё!`,
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🎬 Создать своё видео', url: `https://t.me/${process.env.BOT_NAME}` }]
-                    ]
-                }
+                title: `🎬 ${targetVideo.memeName || 'Вирусный ролик'}`,
+                description: 'Забирай бесплатную попытку и сделай своё видео!',
+                caption: shareCaption,
+                reply_markup: shareKeyboard
             });
         } else {
             // Fallback на URL (без водяного знака)
@@ -1333,14 +1727,10 @@ bot.on('inline_query', async (ctx) => {
                 video_url: targetVideo.videoUrl,
                 mime_type: 'video/mp4',
                 thumb_url: targetVideo.videoUrl,
-                title: `🎬 ${targetVideo.memeName}`,
-                description: `Видео с именем: ${targetVideo.name}`,
-                caption: `🎬 Смотри какое крутое видео я создал в @${process.env.BOT_NAME}!\n\n✨ Ты тоже можешь создать своё!`,
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🎬 Создать своё видео', url: `https://t.me/${process.env.BOT_NAME}` }]
-                    ]
-                }
+                title: `🎬 ${targetVideo.memeName || 'Вирусный ролик'}`,
+                description: 'Забирай бесплатную попытку и сделай своё видео!',
+                caption: shareCaption,
+                reply_markup: shareKeyboard
             });
         }
         
@@ -1350,10 +1740,11 @@ bot.on('inline_query', async (ctx) => {
     } catch (err) {
         console.error('❌ Error in inline_query:', err);
         console.error(err.stack);
+        const userId = ctx.from?.id || '';
         await ctx.answerInlineQuery([], {
             cache_time: 0,
-            switch_pm_text: 'Создать видео',
-            switch_pm_parameter: 'create'
+            switch_pm_text: '⚡ Создать своё видео',
+            switch_pm_parameter: `ref_${userId}`
         });
     }
 });
@@ -1374,9 +1765,65 @@ bot.action(/select_package_(.+)/, (ctx) => {
 bot.action('about', (ctx) => paymentController.handleAbout(ctx));
 
 // Обработка личного кабинета
-bot.action('profile', (ctx) => paymentController.handleProfile(ctx));
+bot.command('profile', (ctx) => handleProfile(ctx));
+bot.action('profile', (ctx) => handleProfile(ctx));
+bot.action('withdraw', (ctx) => handleWithdraw(ctx));
 bot.action('profile_history', (ctx) => paymentController.handleProfileHistory(ctx));
 bot.action(/^profile_history:(\d+)$/, (ctx) => paymentController.handleProfileHistory(ctx));
+bot.action('profile_transactions', (ctx) => paymentController.handleProfileTransactions(ctx));
+bot.action(/^profile_transactions:(\d+)$/, (ctx) => paymentController.handleProfileTransactions(ctx));
+
+// Админ-команды синхронизации оплат для администраторов (TASK-20)
+bot.command('sync_my_orders', async (ctx) => {
+    try {
+        const userId = ctx.from.id;
+        const { ADMINS } = await import('./config.js');
+        if (!ADMINS.includes(userId)) return;
+
+        const userOrders = await orderService.getUserOrders(userId);
+        if (!userOrders || userOrders.length === 0) {
+            return await ctx.reply('🔍 Заказов не найдено.');
+        }
+
+        let report = `🔍 Найдено заказов: ${userOrders.length}\n\n`;
+        for (const ord of userOrders) {
+            report += `• Заказ: ${ord.orderId}\n  Сумма: ${ord.amount} (${ord.isFiat ? 'карта' : 'крипта'})\n  Статус: ${ord.isPaid ? '✅ Оплачен' : '⏳ Ожидает'}\n\n`;
+        }
+        await ctx.reply(report);
+    } catch (e) {
+        await ctx.reply('Ошибка: ' + e.message);
+    }
+});
+
+bot.command('mark_paid', async (ctx) => {
+    try {
+        const userId = ctx.from.id;
+        const { ADMINS, PACKAGES } = await import('./config.js');
+        if (!ADMINS.includes(userId)) return;
+
+        const parts = ctx.message.text.split(' ');
+        const targetOrderId = parts[1]?.trim();
+        if (!targetOrderId) {
+            return await ctx.reply('Использование: /mark_paid <orderId>');
+        }
+
+        const ord = await orderService.getOrderById(targetOrderId);
+        if (!ord) return await ctx.reply(`❌ Заказ ${targetOrderId} не найден`);
+
+        await orderService.markAsPaid(targetOrderId);
+        const pkg = PACKAGES[ord.package];
+        if (pkg) {
+            await userService.addPaidQuota(ord.userId, pkg.generations);
+        }
+        if (!ord.isFiat) {
+            await userService.addWalletBalance(ord.userId, Number(ord.amount || 0));
+        }
+
+        await ctx.reply(`✅ Заказ ${targetOrderId} отмечен как оплаченный. Баланс пользователя ${ord.userId} пополнен на ${pkg ? pkg.generations + ' видео' : ord.amount + ' USDT'}.`);
+    } catch (e) {
+        await ctx.reply('Ошибка: ' + e.message);
+    }
+});
 
 // Обработка реферальной программы
 bot.action('referral', (ctx) => paymentController.handleReferral(ctx));
@@ -1384,6 +1831,19 @@ bot.action('ref_user', (ctx) => paymentController.handleRefUser(ctx));
 bot.action('ref_expert', (ctx) => paymentController.handleRefExpert(ctx));
 
 // Обработка оплаты
+bot.action('pay_card_packages', (ctx) => {
+    paymentController.handlePayCardPackages(ctx);
+});
+bot.action('pay_crypto_deposit', (ctx) => {
+    paymentController.handlePayCrypto(ctx, 'deposit');
+});
+bot.action('pay_crypto', (ctx) => {
+    paymentController.handlePayCrypto(ctx, 'deposit');
+});
+bot.action(/pay_card_oneclick_(.+)/, (ctx) => {
+    const packageKey = ctx.match[1];
+    paymentController.handlePayCard(ctx, packageKey);
+});
 bot.action(/pay_card_(.+)/, (ctx) => {
     const packageKey = ctx.match[1];
     paymentController.handlePayCard(ctx, packageKey);
@@ -1417,6 +1877,7 @@ bot.action(/chain_(.+)/, (ctx) => {
     // Формат: chain_CRYPTO_CHAIN_PACKAGE
     // chain_TON_TON_single => ['chain', 'TON', 'TON', 'single']
     // chain_USDT_USDT_(TRC20)_pack_10 => ['chain', 'USDT', 'USDT', '(TRC20)', 'pack', '10']
+    // chain_USDT_USDT_(BEP20)_deposit => ['chain', 'USDT', 'USDT', '(BEP20)', 'deposit']
     
     if (parts.length < 4) {
         console.error('❌ Invalid chain callback format:', ctx.callbackQuery.data);
@@ -1425,19 +1886,19 @@ bot.action(/chain_(.+)/, (ctx) => {
     
     const crypto = parts[1]; // USDT, USDC, TON
     
-    // Находим packageKey - это последний сегмент, который начинается с 'single', 'pack' или является 'pack_X'
+    // Находим packageKey - это последний сегмент, который начинается с 'single', 'deposit', 'pack' или является 'pack_X'
     let packageKey = '';
     let chainParts = [];
     
     // Идем с конца и собираем packageKey
     for (let i = parts.length - 1; i >= 2; i--) {
-        if (parts[i].match(/^(single|pack|10|50|100|500)$/)) {
+        if (parts[i].match(/^(single|deposit|pack|10|50|100|500)$/)) {
             if (parts[i] === 'pack' && parts[i + 1]) {
                 packageKey = `pack_${parts[i + 1]}`;
                 chainParts = parts.slice(2, i);
                 break;
-            } else if (parts[i] === 'single') {
-                packageKey = 'single';
+            } else if (parts[i] === 'single' || parts[i] === 'deposit') {
+                packageKey = parts[i];
                 chainParts = parts.slice(2, i);
                 break;
             }
@@ -1461,6 +1922,12 @@ bot.action(/chain_(.+)/, (ctx) => {
 bot.action(/check_payment_(.+)/, (ctx) => {
     const orderId = ctx.match[1];
     paymentController.handleCheckPayment(ctx, orderId);
+});
+
+// Показ QR-кода по отдельной кнопке (TASK-20)
+bot.action(/show_qr_(.+)/, (ctx) => {
+    const orderId = ctx.match[1];
+    paymentController.handleShowQrCode(ctx, orderId);
 });
 
 // Обработка неизвестных callback (для отладки)

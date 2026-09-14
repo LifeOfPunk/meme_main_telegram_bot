@@ -24,7 +24,8 @@ async function testMemeLoader() {
             console.log(`   ${index + 1}. ${statusIcon} ${meme.name}`);
             console.log(`      ID: ${meme.id}`);
             console.log(`      Статус: ${meme.status}`);
-            console.log(`      Промпт: ${meme.prompt.substring(0, 60)}...`);
+            const promptStr = typeof meme.prompt === 'string' ? meme.prompt : JSON.stringify(meme.prompt);
+            console.log(`      Промпт: ${promptStr.substring(0, 60)}...`);
             console.log(`      Длительность: ${meme.duration}с\n`);
         });
         
@@ -49,10 +50,11 @@ async function testMemeLoader() {
             
             // Проверка плейсхолдеров в промпте
             if (meme.status === 'active') {
-                if (!meme.prompt.includes('{name}')) {
+                const promptStr = typeof meme.prompt === 'string' ? meme.prompt : JSON.stringify(meme.prompt);
+                if (!promptStr.includes('{name}')) {
                     console.log(`   ⚠️  Мем "${meme.name}": промпт не содержит {name}`);
                 }
-                if (!meme.prompt.includes('{gender_text}') && !meme.prompt.includes('{gender}')) {
+                if (!promptStr.includes('{gender_text}') && !promptStr.includes('{gender}')) {
                     console.log(`   ⚠️  Мем "${meme.name}": промпт не содержит {gender_text} или {gender}`);
                 }
             }
@@ -94,10 +96,11 @@ async function testMemeLoader() {
             const testGender = 'male';
             const genderText = testGender === 'male' ? 'мальчик' : 'девочка';
             
-            let finalPrompt = foundMeme.prompt
-                .replace('{name}', testName)
-                .replace('{gender}', testGender)
-                .replace('{gender_text}', genderText);
+            const rawPrompt = typeof foundMeme.prompt === 'string' ? foundMeme.prompt : JSON.stringify(foundMeme.prompt);
+            let finalPrompt = rawPrompt
+                .replace(/{name}/g, testName)
+                .replace(/{gender}/g, testGender)
+                .replace(/{gender_text}/g, genderText);
             
             console.log(`   📝 Имя: ${testName}`);
             console.log(`   🚻 Пол: ${genderText}`);

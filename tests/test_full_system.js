@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import { ReferralService } from './src/services/Referral.service.js';
-import { UserService } from './src/services/User.service.js';
-import { OrderService } from './src/services/Order.service.js';
+import { ReferralService } from '../src/services/Referral.service.js';
+import { UserService } from '../src/services/User.service.js';
+import { OrderService } from '../src/services/Order.service.js';
 
 const referralService = new ReferralService();
 const userService = new UserService();

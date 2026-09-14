@@ -1,0 +1,2257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViralApp Telegram Bot — Прототип и Админка Staging</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="shortcut icon" type="image/png" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/favicon.png">
+    <style>
+        :root {
+            --bg-page: #0f141c;
+            --card-bg: #1a222d;
+            --card-border: #263445;
+            --tg-chat-bg: #0e1621;
+            --tg-msg-in: #182533;
+            --tg-btn-bg: #242f3d;
+            --tg-btn-hover: #2b394a;
+            --tg-btn-text: #64b5f6;
+            --text-primary: #ffffff;
+            --text-secondary: #7f91a4;
+            --brand-purple: #8b5cf6;
+            --brand-green: #22c55e;
+            --brand-amber: #f59e0b;
+            --brand-blue: #3b82f6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-page);
+            color: var(--text-primary);
+            display: flex;
+            min-height: 100vh;
+            padding: 20px;
+            gap: 24px;
+        }
+
+        /* Password Modal Gate */
+        #authOverlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(8, 12, 18, 0.96);
+            backdrop-filter: blur(14px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+        }
+
+        .auth-card {
+            background: #151d27;
+            border: 1px solid #283749;
+            border-radius: 20px;
+            padding: 36px 32px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+
+        .auth-logo {
+            width: 60px;
+            height: 60px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, var(--brand-purple), var(--brand-green));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 18px;
+            font-size: 26px;
+            font-weight: 800;
+            color: #fff;
+            box-shadow: 0 10px 25px rgba(139, 92, 246, 0.4);
+        }
+
+        .auth-card h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #ffffff;
+        }
+
+        .auth-card p {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 22px;
+            line-height: 1.5;
+        }
+
+        .auth-input-box {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 13px 16px;
+            background: #0d131a;
+            border: 1px solid #243242;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .auth-input:focus {
+            border-color: var(--brand-purple);
+        }
+
+        .auth-error {
+            color: #ef4444;
+            font-size: 12.5px;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .auth-submit-btn {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, var(--brand-purple), #6366f1);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 14.5px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .auth-submit-btn:hover {
+            opacity: 0.92;
+        }
+
+        .auth-submit-btn:active {
+            transform: scale(0.99);
+        }
+
+        /* Phone Mockup Frame */
+        .phone-wrapper {
+            flex: 0 0 410px;
+            background: #000000;
+            border-radius: 40px;
+            padding: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px #333;
+            height: 860px;
+            display: flex;
+            flex-direction: column;
+            position: sticky;
+            top: 20px;
+        }
+
+        .phone-screen {
+            background: var(--tg-chat-bg);
+            border-radius: 32px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            background-image: radial-gradient(#17212b 1px, transparent 1px);
+            background-size: 16px 16px;
+        }
+
+        .tg-header {
+            background: #17212b;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #10161e;
+            z-index: 10;
+        }
+
+        .tg-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6c5ce7, #00cec9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .tg-header-info h3 {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .tg-header-info p {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .tg-chat {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .tg-msg {
+            background: var(--tg-msg-in);
+            padding: 12px 14px;
+            border-radius: 14px 14px 14px 4px;
+            max-width: 92%;
+            font-size: 13.5px;
+            line-height: 1.45;
+            color: #f5f5f5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            white-space: pre-wrap;
+        }
+
+        .tg-msg a {
+            color: #64b5f6 !important;
+            text-decoration: underline !important;
+            cursor: pointer !important;
+        }
+
+        .tg-msg-time {
+            float: right;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            margin-left: 8px;
+        }
+
+        .tg-qr-box {
+            width: 100%;
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+
+        .tg-qr-box img {
+            width: 160px;
+            height: 160px;
+        }
+
+        .code-box {
+            background: #0d141c;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            color: #64b5f6;
+            margin: 6px 0;
+            display: inline-block;
+            word-break: break-all;
+        }
+
+        .tg-keyboard {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+            width: 92%;
+        }
+
+        .tg-btn {
+            background: var(--tg-btn-bg);
+            color: var(--tg-btn-text);
+            padding: 9px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.05s;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .tg-btn:hover {
+            background: var(--tg-btn-hover);
+        }
+
+        .tg-btn:active {
+            transform: scale(0.98);
+        }
+
+        .tg-btn.style-success {
+            background: #1b5e20;
+            color: #a5d6a7;
+            font-weight: 600;
+        }
+        .tg-btn.style-success:hover {
+            background: #2e7d32;
+        }
+
+        .tg-btn.style-primary {
+            background: #1d4ed8;
+            color: #bfdbfe;
+            font-weight: 600;
+        }
+        .tg-btn.style-primary:hover {
+            background: #2563eb;
+        }
+
+        .tg-btn.style-warning {
+            background: #854d0e;
+            color: #fef08a;
+            font-weight: 600;
+        }
+        .tg-btn.style-warning:hover {
+            background: #a16207;
+        }
+
+        .tg-btn.style-purple {
+            background: #581c87;
+            color: #e9d5ff;
+            font-weight: 600;
+        }
+        .tg-btn.style-purple:hover {
+            background: #6b21a8;
+        }
+
+        .tg-btn.style-secondary {
+            background: #1e293b;
+            color: #94a3b8;
+        }
+        .tg-btn.style-secondary:hover {
+            background: #334155;
+        }
+
+        .tg-media-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 10px;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .tg-media-card {
+            position: relative;
+            aspect-ratio: 4 / 5;
+            overflow: hidden;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #0f172a;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .tg-media-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transition: transform 0.2s ease;
+        }
+
+        .tg-media-card:hover img {
+            transform: scale(1.04);
+        }
+
+        .tg-media-badge {
+            position: absolute;
+            bottom: 6px;
+            left: 6px;
+            right: 6px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+            color: #f1f5f9;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 6px;
+            border-radius: 5px;
+            pointer-events: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tg-media-zoom-hint {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: rgba(0, 0, 0, 0.65);
+            color: #fff;
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
+        /* Image Viewer Modal */
+        .image-viewer-modal {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.88);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            padding: 16px;
+        }
+
+        .image-viewer-modal img {
+            max-width: 96%;
+            max-height: 75%;
+            border-radius: 12px;
+            object-fit: contain;
+            border: 1px solid #334155;
+        }
+
+        .image-viewer-caption {
+            margin-top: 12px;
+            color: #f8fafc;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            background: #1e293b;
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid #334155;
+        }
+
+        .image-viewer-close {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        /* Share Modal Overlay */
+        .modal-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            padding: 16px;
+        }
+
+        .modal-box {
+            background: #182533;
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid #2b394a;
+            max-width: 360px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+
+        .modal-box h3 {
+            font-size: 15px;
+            margin-bottom: 10px;
+            color: #64b5f6;
+        }
+
+        .modal-box p {
+            font-size: 13px;
+            color: #cbd5e1;
+            line-height: 1.4;
+            margin-bottom: 14px;
+        }
+
+        /* Main Right Container */
+        .steps-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+            max-height: 94vh;
+            padding-right: 6px;
+        }
+
+        /* Mode Switcher Tabs */
+        .mode-tabs {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #121822;
+            border: 1px solid #202b3a;
+            border-radius: 14px;
+            padding: 6px;
+        }
+
+        .mode-tab-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 18px;
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mode-tab-btn.active {
+            background: #1e293b;
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+
+        .mode-tab-btn.admin-tab.active {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(59, 130, 246, 0.25));
+            color: #c4b5fd;
+            border: 1px solid rgba(139, 92, 246, 0.4);
+        }
+
+        .badge-tag {
+            font-size: 10.5px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .badge-staging {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        /* Common Card Styles */
+        .step-block {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            padding: 16px 18px;
+        }
+
+        .step-block h4 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .step-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .step-nav-btn {
+            background: #111823;
+            border: 1px solid #233245;
+            color: #e2e8f0;
+            padding: 7px 12px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .step-nav-btn:hover {
+            border-color: #3b82f6;
+            color: #3b82f6;
+        }
+
+        .step-nav-btn.active {
+            background: #2563eb;
+            border-color: #3b82f6;
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .switch-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .switch-box {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            background: #10161f;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid #1f2b3a;
+            transition: all 0.2s;
+        }
+
+        .switch-box:hover {
+            border-color: #3b82f6;
+        }
+
+        .switch-box label {
+            font-size: 12.5px;
+            color: #cbd5e1;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .switch-box input[type="checkbox"] {
+            cursor: pointer;
+            accent-color: #10b981;
+            width: 15px;
+            height: 15px;
+        }
+
+        /* ─── ADMIN CMS STYLES ─── */
+        .admin-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* GitHub Sync Bar */
+        .gh-sync-bar {
+            background: linear-gradient(135deg, #131d2a, #182333);
+            border: 1px solid #2b3c52;
+            border-radius: 14px;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        .gh-bar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .gh-title-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .gh-title-group h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .gh-inputs-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 900px) {
+            .gh-inputs-grid {
+                grid-template-columns: 1fr;
+            }
+            body {
+                flex-direction: column;
+            }
+            .phone-wrapper {
+                position: static;
+                width: 100%;
+            }
+        }
+
+        .admin-field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .admin-field-group label {
+            font-size: 11.5px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #94a3b8;
+        }
+
+        .admin-input, .admin-select, .admin-textarea {
+            width: 100%;
+            padding: 9px 12px;
+            background: #0d141e;
+            border: 1px solid #233246;
+            border-radius: 8px;
+            color: #f8fafc;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .admin-input:focus, .admin-select:focus, .admin-textarea:focus {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+        }
+
+        .admin-textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: inherit;
+            line-height: 1.45;
+        }
+
+        .gh-actions-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn-push-gh {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 13.5px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+        }
+
+        .btn-push-gh:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-push-gh:active {
+            transform: translateY(0);
+        }
+
+        .btn-push-gh:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary-gh {
+            background: #1a2533;
+            border: 1px solid #2a394c;
+            color: #cbd5e1;
+            padding: 9px 14px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary-gh:hover {
+            border-color: #3b82f6;
+            color: #ffffff;
+        }
+
+        .gh-status-box {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            line-height: 1.4;
+            display: none;
+        }
+
+        .gh-status-box.success {
+            display: block;
+            background: rgba(34, 197, 94, 0.12);
+            border: 1px solid rgba(34, 197, 94, 0.35);
+            color: #86efac;
+        }
+
+        .gh-status-box.loading {
+            display: block;
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            color: #93c5fd;
+        }
+
+        .gh-status-box.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #fca5a5;
+        }
+
+        /* CMS Sub-sections */
+        .cms-section-tabs {
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid #233345;
+            padding-bottom: 10px;
+            margin-bottom: 14px;
+        }
+
+        .cms-subtab-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .cms-subtab-btn.active {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        /* Buttons Table Editor */
+        .buttons-editor-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .button-edit-item {
+            background: #111823;
+            border: 1px solid #233346;
+            border-radius: 10px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: border-color 0.2s;
+        }
+
+        .button-edit-item:hover {
+            border-color: #354961;
+        }
+
+        .button-edit-item.hidden-btn {
+            opacity: 0.45;
+            background: #0c121a;
+        }
+
+        .btn-order-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .btn-order-arrow {
+            background: #182230;
+            border: 1px solid #29384b;
+            color: #94a3b8;
+            border-radius: 4px;
+            width: 24px;
+            height: 18px;
+            font-size: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .btn-order-arrow:hover {
+            color: #fff;
+            border-color: #3b82f6;
+            background: #2563eb;
+        }
+
+        .btn-delete-row {
+            background: transparent;
+            border: 1px solid #451a1a;
+            color: #ef4444;
+            border-radius: 6px;
+            padding: 5px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-delete-row:hover {
+            background: #dc2626;
+            color: #fff;
+        }
+
+        /* Templates CMS Cards */
+        .templates-grid-cms {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        @media (max-width: 800px) {
+            .templates-grid-cms {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .template-cms-card {
+            background: #111823;
+            border: 1px solid #233346;
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .template-cms-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .template-thumb-preview {
+            display: flex;
+            gap: 8px;
+        }
+
+        .template-thumb-preview img {
+            width: 48px;
+            height: 60px;
+            border-radius: 6px;
+            object-fit: cover;
+            border: 1px solid #2d3e52;
+        }
+
+        .btn-add-item {
+            background: #152233;
+            border: 1px dashed #2f4561;
+            color: #60a5fa;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-add-item:hover {
+            background: #1c2e45;
+            border-color: #3b82f6;
+            color: #93c5fd;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Password Auth Overlay -->
+    <div id="authOverlay">
+        <div class="auth-card">
+            <div class="auth-logo">⚡</div>
+            <h2>Доступ к прототипу</h2>
+            <p>Прототип и Админка Telegram-бота <b>ViralApp</b> защищены паролем команды.</p>
+            <form id="authForm" onsubmit="handleAuthSubmit(event)">
+                <div class="auth-input-box">
+                    <input type="password" id="authPassword" class="auth-input" placeholder="Введите пароль..." autofocus required>
+                    <div id="authError" class="auth-error">Неверный пароль. Попробуйте еще раз.</div>
+                </div>
+                <button type="submit" class="auth-submit-btn">Войти в прототип</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Phone Mockup -->
+    <div class="phone-wrapper">
+        <div class="phone-screen" id="phoneScreen">
+            <div class="tg-header">
+                <div class="tg-avatar">VA</div>
+                <div class="tg-header-info">
+                    <h3 id="tgBotHeaderTitle">ViralApp Bot ⚡</h3>
+                    <p>bot • онлайн</p>
+                </div>
+            </div>
+
+            <div class="tg-chat" id="chat">
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Container -->
+    <div class="steps-container">
+
+        <!-- Top Navigation Mode Switcher -->
+        <div class="mode-tabs">
+            <button class="mode-tab-btn active" id="modeBtnNav" onclick="switchMode('nav')">
+                📱 Навигация по экранам
+            </button>
+            <button class="mode-tab-btn admin-tab" id="modeBtnAdmin" onclick="switchMode('admin')">
+                🛠 Визуальная Админка <span class="badge-tag badge-staging">staging</span>
+            </button>
+        </div>
+
+        <!-- ═══ MODE 1: PROTOTYPE NAVIGATION ═══ -->
+        <div id="panelNav" style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h1 style="font-size: 20px; font-weight: 700;">Зеркальный прототип ViralApp Bot</h1>
+                    <p style="color: var(--text-secondary); font-size: 13px; margin-top: 3px;">Точная иерархия, суммарный баланс в профиле, меню генерации с шаблонами и шеринг-модалка</p>
+                </div>
+                <div class="switch-group">
+                    <div class="switch-box">
+                        <input type="checkbox" id="quotaToggle" onchange="toggleFreeQuota()">
+                        <label for="quotaToggle">🎁 Бесплатная квота (+1)</label>
+                    </div>
+                    <div class="switch-box">
+                        <input type="checkbox" id="cashbackToggle" onchange="toggleReferralCashback()">
+                        <label for="cashbackToggle">💰 Кешбэк (15 USDT)</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 1. ГЛАВНОЕ МЕНЮ -->
+            <div class="step-block">
+                <h4>ЭКРАН 1: ГЛАВНОЕ МЕНЮ (START)</h4>
+                <div class="step-buttons">
+                    <button class="step-nav-btn" id="btn-main" onclick="goTo('main_menu')">1.0 Главное меню бота</button>
+                </div>
+            </div>
+
+            <!-- 2. ФЛОУ ГЕНЕРАЦИИ -->
+            <div class="step-block">
+                <h4>ЭКРАН 2: ВЫБОР РЕЖИМА ГЕНЕРАЦИИ (СВОЙ ПРОМПТ / ШАБЛОН)</h4>
+                <div class="step-buttons">
+                    <button class="step-nav-btn" id="btn-create-menu" onclick="goTo('create_video_menu')">2.1 Меню генерации (Промпт / Шаблон)</button>
+                    <button class="step-nav-btn" id="btn-catalog" onclick="goTo('catalog_menu')">2.2 Каталог шаблонов</button>
+                    <button class="step-nav-btn" id="btn-meme-selected" onclick="goTo('meme_selected_flow')">2.3 Шаблон Мама вызывай</button>
+                    <button class="step-nav-btn" id="btn-mops-selected" onclick="goTo('mops_selected_flow')">2.3b Шаблон Мопс</button>
+                    <button class="step-nav-btn" id="btn-meme-gender" onclick="goTo('meme_gender_choice')">2.4 Выбор пола</button>
+                    <button class="step-nav-btn" id="btn-meme-confirm" onclick="goTo('meme_confirm_gen')">2.5 Подтверждение генерации</button>
+                    <button class="step-nav-btn" id="btn-custom-prompt" onclick="goTo('custom_prompt_input')">2.6 Ввод своего промпта</button>
+                    <button class="step-nav-btn" id="btn-video-ready" onclick="goTo('video_ready')">2.7 Готовое видео + Шеринг</button>
+                </div>
+            </div>
+
+            <!-- 3. СПОСОБЫ ОПЛАТЫ -->
+            <div class="step-block">
+                <h4>ЭКРАН 3: ПОПОЛНЕНИЕ / ВЫБОР СПОСОБА ОПЛАТЫ</h4>
+                <div class="step-buttons">
+                    <button class="step-nav-btn" id="btn-pay-method" onclick="goTo('pay_method')">3.0 Выбор: Карта vs Крипта</button>
+                    <button class="step-nav-btn" id="btn-card-packages" onclick="goTo('card_packages')">3.1 Пакеты карты (500₽ - 20000₽)</button>
+                    <button class="step-nav-btn" id="btn-card-inv" onclick="goTo('card_invoice_10')">3.2 Инвойс Lava (в 1 клик)</button>
+                    <button class="step-nav-btn" id="btn-crypto-networks" onclick="goTo('crypto_networks')">3.3 Сети крипты (TON, BEP20, SOL, BNB)</button>
+                    <button class="step-nav-btn" id="btn-crypto-ton" onclick="goTo('crypto_deposit_ton')">3.4 Депозит TON + QR-код</button>
+                </div>
+            </div>
+
+            <!-- 4. ЛИЧНЫЙ КАБИНЕТ -->
+            <div class="step-block">
+                <h4>ЭКРАН 4: ЛИЧНЫЙ КАБИНЕТ (СУММАРНЫЙ БАЛАНС) И ВЫВОД</h4>
+                <div class="step-buttons">
+                    <button class="step-nav-btn" id="btn-profile-calc" onclick="goTo('profile_calculated')">4.1 Личный кабинет</button>
+                    <button class="step-nav-btn" id="btn-withdraw" onclick="goTo('withdraw_screen')">4.2 Вывод кешбэка</button>
+                    <button class="step-nav-btn" id="btn-referral" onclick="goTo('referral_screen')">4.3 Реферальная программа</button>
+                    <button class="step-nav-btn" id="btn-about" onclick="goTo('about_screen')">4.4 О проекте</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ MODE 2: VISUAL ADMIN CMS (STAGING) ═══ -->
+        <div id="panelAdmin" class="admin-panel" style="display: none;">
+
+            <!-- GitHub Deploy Control Bar -->
+            <div class="gh-sync-bar">
+                <div class="gh-bar-header">
+                    <div class="gh-title-group">
+                        <span style="font-size: 20px;">🚀</span>
+                        <div>
+                            <h3>Синхронизация с GitHub Staging</h3>
+                            <p style="font-size: 12px; color: #94a3b8;">Прямой коммит изменений в репозиторий с автоматическим GitHub Actions деплоем</p>
+                        </div>
+                    </div>
+                    <span class="badge-tag badge-staging">Репозиторий: LifeOfPunk/meme_main_telegram_bot</span>
+                </div>
+
+                <div class="gh-inputs-grid">
+                    <div class="admin-field-group">
+                        <label>GitHub Personal Access Token (PAT)</label>
+                        <input type="password" id="ghTokenInput" class="admin-input" placeholder="github_pat_... или ghp_..." oninput="onGhTokenChange(this.value)">
+                        <span style="font-size: 11px; color: #64748b;">Сохраняется локально в вашем браузере (localStorage)</span>
+                    </div>
+                    <div class="admin-field-group">
+                        <label>Сообщение коммита (Commit Message)</label>
+                        <input type="text" id="ghCommitMessage" class="admin-input" value="chore(cms): update bot texts and templates via staging admin">
+                        <span style="font-size: 11px; color: #64748b;">Ветка назначения: <b>staging</b></span>
+                    </div>
+                </div>
+
+                <div class="gh-actions-row">
+                    <button class="btn-push-gh" id="btnPushGh" onclick="pushChangesToGitHub()">
+                        <span>🚀</span> Запушить в GitHub (staging)
+                    </button>
+                    <button class="btn-secondary-gh" onclick="exportCmsJson()">
+                        📥 Экспорт JSON
+                    </button>
+                    <button class="btn-secondary-gh" onclick="triggerImportJson()">
+                        📤 Импорт JSON
+                    </button>
+                    <input type="file" id="importJsonInput" style="display: none;" accept=".json" onchange="handleImportJsonFile(event)">
+                    <button class="btn-secondary-gh" style="color: #f87171;" onclick="resetCmsToDefaults()">
+                        🔄 Сброс к дефолтам
+                    </button>
+                </div>
+
+                <div id="ghStatusBox" class="gh-status-box"></div>
+            </div>
+
+            <!-- CMS Sub-navigation -->
+            <div class="step-block">
+                <div class="cms-section-tabs">
+                    <button class="cms-subtab-btn active" id="subtab-texts" onclick="switchCmsSubtab('texts')">📝 Тексты экранов</button>
+                    <button class="cms-subtab-btn" id="subtab-buttons" onclick="switchCmsSubtab('buttons')">🔘 Кнопки и клавиатуры</button>
+                    <button class="cms-subtab-btn" id="subtab-templates" onclick="switchCmsSubtab('templates')">🎬 Каталог шаблонов</button>
+                </div>
+
+                <!-- SUBTAB 1: SCREEN TEXTS -->
+                <div id="cmsSecTexts">
+                    <div class="admin-field-group" style="margin-bottom: 12px;">
+                        <label>Выберите экран для редактирования текста:</label>
+                        <select id="cmsScreenSelect" class="admin-select" onchange="onCmsScreenSelect(this.value)">
+                            <option value="main_menu">1. Главное меню (Start)</option>
+                            <option value="no_balance_screen">Экран: Нет баланса</option>
+                            <option value="create_video_menu">2. Меню создания видео</option>
+                            <option value="catalog_menu">Каталог шаблонов мемов</option>
+                            <option value="meme_confirm_gen">Подтверждение генерации</option>
+                            <option value="custom_prompt_input">Ввод своего промпта</option>
+                            <option value="video_ready">Готовое видео + шеринг</option>
+                            <option value="pay_method">Выбор метода оплаты</option>
+                            <option value="card_packages">Пакеты оплаты картой</option>
+                            <option value="card_invoice_10">Инвойс карты (Lava)</option>
+                            <option value="crypto_networks">Сети крипты</option>
+                            <option value="crypto_deposit_ton">Крипто-депозит (TON)</option>
+                            <option value="profile_calculated">Личный кабинет (Профиль)</option>
+                            <option value="withdraw_screen">Вывод реферальных</option>
+                            <option value="referral_screen">Партнерская программа</option>
+                            <option value="about_screen">О проекте</option>
+                        </select>
+                    </div>
+
+                    <div class="admin-field-group">
+                        <label>Текст экрана (поддерживаются переносы строк и HTML-теги: &lt;b&gt;, &lt;i&gt;, &lt;a&gt;, &lt;code&gt;):</label>
+                        <textarea id="cmsScreenTextarea" class="admin-textarea" rows="7" oninput="onScreenTextareaInput(this.value)"></textarea>
+                    </div>
+                    <div style="font-size: 11.5px; color: #64748b; margin-top: 6px;">
+                        ⚡ Любые изменения мгновенно отображаются на макете смартфона слева в режиме реального времени.
+                    </div>
+                </div>
+
+                <!-- SUBTAB 2: KEYBOARDS & BUTTONS -->
+                <div id="cmsSecButtons" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <label style="font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">
+                            Кнопки экрана: <span id="cmsBtnScreenTitle" style="color: #60a5fa;">Главное меню</span>
+                        </label>
+                        <span style="font-size: 11.5px; color: #64748b;">Стрелки ↑/↓ меняют порядок • Чекбокс 👁️ скрывает кнопку</span>
+                    </div>
+
+                    <div id="cmsButtonsContainer" class="buttons-editor-list">
+                        <!-- Rendered dynamically -->
+                    </div>
+
+                    <div class="btn-add-item" onclick="openAddButtonModal()">
+                        <span>➕</span> Добавить новую кнопку на этот экран
+                    </div>
+                </div>
+
+                <!-- SUBTAB 3: MEME TEMPLATES -->
+                <div id="cmsSecTemplates" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label style="font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">
+                            Каталог вирусных шаблонов мемов
+                        </label>
+                        <button class="btn-secondary-gh" style="font-size: 11px; padding: 5px 10px;" onclick="openAddTemplateModal()">
+                            ➕ Добавить шаблон
+                        </button>
+                    </div>
+
+                    <div id="cmsTemplatesContainer" class="templates-grid-cms">
+                        <!-- Rendered dynamically -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ADD BUTTON MODAL -->
+    <div id="addButtonModal" class="modal-overlay" style="display: none;">
+        <div class="modal-box" style="max-width: 440px; width: 92%;">
+            <h3>➕ Новая кнопка клавиатуры</h3>
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+                <div class="admin-field-group">
+                    <label>Текст кнопки</label>
+                    <input type="text" id="newBtnText" class="admin-input" placeholder="Например: 🚀 Запустить акцию">
+                </div>
+                <div class="admin-field-group">
+                    <label>Стиль оформления</label>
+                    <select id="newBtnStyle" class="admin-select">
+                        <option value="">Обычная (серая)</option>
+                        <option value="style-primary">🔵 Синяя (Primary)</option>
+                        <option value="style-success">🟢 Зеленая (Success)</option>
+                        <option value="style-warning">🟡 Желтая (Warning)</option>
+                        <option value="style-purple">🟣 Фиолетовая (Purple)</option>
+                    </select>
+                </div>
+                <div class="admin-field-group">
+                    <label>Действие при нажатии</label>
+                    <select id="newBtnActionType" class="admin-select" onchange="onNewBtnActionTypeChange(this.value)">
+                        <option value="goto">Переход на экран бота</option>
+                        <option value="url">Внешняя ссылка (URL)</option>
+                        <option value="alert">Всплывающее уведомление (Alert)</option>
+                    </select>
+                </div>
+                <div class="admin-field-group" id="newBtnTargetBox">
+                    <label>Экран назначения</label>
+                    <select id="newBtnTargetScreen" class="admin-select">
+                        <option value="main_menu">Главное меню</option>
+                        <option value="create_video_menu">Меню генерации</option>
+                        <option value="catalog_menu">Каталог шаблонов</option>
+                        <option value="pay_method">Выбор оплаты</option>
+                        <option value="card_packages">Пакеты карты</option>
+                        <option value="crypto_networks">Сети крипты</option>
+                        <option value="profile_calculated">Личный кабинет</option>
+                        <option value="referral_screen">Реферальная программа</option>
+                        <option value="about_screen">О проекте</option>
+                    </select>
+                </div>
+                <div class="admin-field-group" id="newBtnUrlBox" style="display: none;">
+                    <label>URL адрес</label>
+                    <input type="text" id="newBtnUrl" class="admin-input" placeholder="https://t.me/...">
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                    <button class="btn-secondary-gh" onclick="closeAddButtonModal()">Отмена</button>
+                    <button class="btn-push-gh" style="padding: 8px 16px; font-size: 13px;" onclick="saveNewButton()">Добавить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD TEMPLATE MODAL -->
+    <div id="addTemplateModal" class="modal-overlay" style="display: none;">
+        <div class="modal-box" style="max-width: 480px; width: 92%;">
+            <h3>🎬 Добавить вирусный шаблон мема</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                <div class="admin-field-group">
+                    <label>ID шаблона (slug)</label>
+                    <input type="text" id="tplIdInput" class="admin-input" placeholder="например, dance_party">
+                </div>
+                <div class="admin-field-group">
+                    <label>Название шаблона</label>
+                    <input type="text" id="tplNameInput" class="admin-input" placeholder="например, 🕺 Танцующий кот">
+                </div>
+                <div class="admin-field-group">
+                    <label>Бейдж просмотров</label>
+                    <input type="text" id="tplBadgeInput" class="admin-input" placeholder="например, 🔥 1,500,000+ просмотров">
+                </div>
+                <div class="admin-field-group">
+                    <label>URL превью видео</label>
+                    <input type="text" id="tplPreviewInput" class="admin-input" placeholder="/proto-media/mops_frame.jpg">
+                </div>
+                <div class="admin-field-group">
+                    <label>URL скриншота статистики</label>
+                    <input type="text" id="tplStatInput" class="admin-input" placeholder="/proto-media/statistic.jpeg">
+                </div>
+                <div class="admin-field-group">
+                    <label>Промпт шаблона</label>
+                    <textarea id="tplPromptInput" class="admin-textarea" rows="3" placeholder="Описание генерации с подстановкой {name}..."></textarea>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                    <button class="btn-secondary-gh" onclick="closeAddTemplateModal()">Отмена</button>
+                    <button class="btn-push-gh" style="padding: 8px 16px; font-size: 13px;" onclick="saveNewTemplate()">Сохранить шаблон</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Password Protection
+        const CORRECT_HASH = "8f37803e62f3f72df2929e710b7ea13426e632dd294715494d693f40f0980ef5";
+
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function handleAuthSubmit(e) {
+            e.preventDefault();
+            const input = document.getElementById('authPassword');
+            const error = document.getElementById('authError');
+            const pass = input.value.trim();
+
+            const hash = await sha256(pass);
+            if (hash === CORRECT_HASH || pass === 'viral2026') {
+                sessionStorage.setItem('viralapp_proto_auth', 'granted');
+                document.getElementById('authOverlay').style.display = 'none';
+            } else {
+                error.style.display = 'block';
+                input.value = '';
+                input.focus();
+            }
+        }
+
+        if (sessionStorage.getItem('viralapp_proto_auth') === 'granted') {
+            document.getElementById('authOverlay').style.display = 'none';
+        }
+
+        // Global Application State
+        let currentScreen = 'main_menu';
+        let currentMode = 'nav'; // 'nav' | 'admin'
+        let currentCmsSubtab = 'texts'; // 'texts' | 'buttons' | 'templates'
+        let hasFreeQuota = true;
+        let hasReferralCashback = true;
+
+        // Default Config
+        const defaultScreensConfig = {
+            main_menu: {
+                title: "1. Главное меню",
+                text: "🎬 Добро пожаловать в ViralApp!\n\nСоздай вирусный персонализированный мем или видео с твоим именем.\n\nВыбери действие:",
+                buttons: [
+                    { id: "b1", text: "🎁 Бесплатная генерация", action: "goTo('create_video_menu')", class: "", condition: "freeQuota", visible: true },
+                    { id: "b2", text: "🎬 Сгенерировать видео", action: "goTo('create_video_menu')", class: "style-primary", visible: true },
+                    { id: "b3", text: "💳 Пополнить баланс", action: "goTo('pay_method')", class: "style-success", visible: true },
+                    { id: "b4", text: "👤 Личный кабинет", action: "goTo('profile_calculated')", class: "", visible: true },
+                    { id: "b5", text: "🤝 Реферальная программа", action: "goTo('referral_screen')", class: "style-warning", visible: true }
+                ],
+                navId: "btn-main"
+            },
+            no_balance_screen: {
+                title: "Нет баланса",
+                text: "🎬 Вы пока не можете генерировать видео, так как у вас недостаточно средств на балансе.\n\nЧтобы создавать видео, пополните баланс удобным способом:",
+                buttons: [
+                    { id: "nb1", text: "💳 Банковская карта", action: "goTo('card_packages')", class: "style-primary", visible: true },
+                    { id: "nb2", text: "💎 Криптовалюта", action: "goTo('crypto_networks')", class: "style-purple", visible: true },
+                    { id: "nb3", text: "🔙 Главное меню", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-pay-method"
+            },
+            create_video_menu: {
+                title: "2. Меню создания видео",
+                text: "🎬 Создание видео по вашему описанию\n\n📝 Опишите сцену, которую вы хотите увидеть в видео. Чем детальнее описание, тем лучше результат!\n\n👉 <a href=\"https://aiviral.agency/kak-pisat-promty/\" target=\"_blank\">Инструкция: как писать промпты 9:16</a>",
+                buttons: [
+                    { id: "cv1", text: "✍️ Написать свой промпт", action: "goTo('custom_prompt_input')", class: "style-primary", visible: true },
+                    { id: "cv2", text: "📝 Использовать шаблон", action: "goTo('catalog_menu')", class: "", visible: true },
+                    { id: "cv3", text: "⏪ Вернуться назад", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-create-menu"
+            },
+            catalog_menu: {
+                title: "Каталог шаблонов мемов",
+                text: "🎬 Создание видео\nВыберите способ создания видео:",
+                buttons: [
+                    { id: "cat1", text: "🚕 Мама вызывай", action: "goTo('meme_selected_flow')", class: "", visible: true },
+                    { id: "cat2", text: "🐶 Мопс доставка", action: "goTo('mops_selected_flow')", class: "", visible: true },
+                    { id: "cat3", text: "⏪ Вернуться назад", action: "goTo('create_video_menu')", class: "", visible: true }
+                ],
+                navId: "btn-catalog"
+            },
+            meme_selected_flow: {
+                title: "Шаблон: Мама вызывай",
+                text: "*🚕 Мама вызывай*\n\n👤 Введите имя ниже для генерации:\n\n⚠️ Внимание: не используйте маты и оскорбления.\n\n💡 Введено имя: <b>Rick</b>",
+                mediaGroup: [
+                    { src: "/proto-media/mother_frame.jpg", title: "Мем: Мама вызывай", badge: "🎬 Исходный ролик" },
+                    { src: "/proto-media/statistic.jpeg", title: "Результат просмотров", badge: "🔥 1,136,642 просмотров" }
+                ],
+                buttons: [
+                    { id: "m1", text: "➡️ Продолжить с именем 'Rick'", action: "goTo('meme_gender_choice')", class: "style-success", visible: true },
+                    { id: "m2", text: "🔙 Назад к каталогу", action: "goTo('catalog_menu')", class: "", visible: true }
+                ],
+                navId: "btn-meme-selected"
+            },
+            mops_selected_flow: {
+                title: "Шаблон: Мопс доставка",
+                text: "*🐶 Мопс танцует*\n\n👤 Введите имя ниже для генерации:\n\n⚠️ Внимание: не используйте маты и оскорбления.\n\n💡 Введено имя: <b>Rick</b>",
+                mediaGroup: [
+                    { src: "/proto-media/mops_frame.jpg", title: "Мем: Мопс", badge: "🎬 Исходный ролик" },
+                    { src: "/proto-media/mops.jpeg", title: "Результат просмотров", badge: "🔥 850,000+ просмотров" }
+                ],
+                buttons: [
+                    { id: "mo1", text: "➡️ Продолжить с именем 'Rick'", action: "goTo('meme_gender_choice')", class: "style-success", visible: true },
+                    { id: "mo2", text: "🔙 Назад к каталогу", action: "goTo('catalog_menu')", class: "", visible: true }
+                ],
+                navId: "btn-mops-selected"
+            },
+            meme_gender_choice: {
+                title: "Выбор пола",
+                text: "Какой ваш пол?",
+                buttons: [
+                    { id: "g1", text: "👦🏻 Я мальчик", action: "goTo('meme_confirm_gen')", class: "style-primary", visible: true },
+                    { id: "g2", text: "🧒🏼 Я девочка", action: "goTo('meme_confirm_gen')", class: "style-purple", visible: true },
+                    { id: "g3", text: "⏪ Вернуться назад", action: "goTo('meme_selected_flow')", class: "", visible: true }
+                ],
+                navId: "btn-meme-gender"
+            },
+            meme_confirm_gen: {
+                title: "Подтверждение генерации",
+                text: "Имя Rick верно начинаю генерацию",
+                buttons: [
+                    { id: "mc1", text: "🚀 Всё верно!", action: "goTo('video_ready')", class: "style-success", visible: true },
+                    { id: "mc2", text: "⏪ Ввести имя еще раз", action: "goTo('meme_selected_flow')", class: "", visible: true }
+                ],
+                navId: "btn-meme-confirm"
+            },
+            custom_prompt_input: {
+                title: "Ввод своего промпта",
+                text: "🎬 Создание видео: Напишите ваш промт ниже.\n\n💡 Совет: каждый промт = одна сцена. Без матов и оскорблений!",
+                buttons: [
+                    { id: "cp1", text: "🚀 Запустить генерацию видео", action: "goTo('video_ready')", class: "style-success", visible: true },
+                    { id: "cp2", text: "⏪ Вернуться назад", action: "goTo('create_video_menu')", class: "", visible: true }
+                ],
+                navId: "btn-custom-prompt"
+            },
+            video_ready: {
+                title: "Готовое видео + Шеринг",
+                text: "✅ Ваше видео готово!\n\n🎬 Генерация успешно завершена!\n⚡ Формат: 6s, 720p, 9:16 (максимальное качество)\n\n⚠️ ВАЖНО: Сохраните видео прямо сейчас!",
+                buttons: [
+                    { id: "vr1", text: "👥 Поделиться с другом", action: "openShareModal()", class: "style-warning", visible: true },
+                    { id: "vr2", text: "🎬 Сгенерировать еще", action: "goTo('create_video_menu')", class: "style-primary", visible: true },
+                    { id: "vr3", text: "🏠 Главное меню", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-video-ready"
+            },
+            pay_method: {
+                title: "3. Способы оплаты",
+                text: "Для генерации видео пополните баланс удобным способом:",
+                buttons: [
+                    { id: "pm1", text: "💳 Банковская карта", action: "goTo('card_packages')", class: "style-primary", visible: true },
+                    { id: "pm2", text: "💎 Криптовалюта", action: "goTo('crypto_networks')", class: "style-purple", visible: true },
+                    { id: "pm3", text: "🔙 Главное меню", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-pay-method"
+            },
+            card_packages: {
+                title: "Пакеты оплаты картой",
+                text: "Выберите пакет для оплаты картой:",
+                buttons: [
+                    { id: "cpk1", text: "🎬 500₽ (10 видео)", action: "goTo('card_invoice_10')", class: "", visible: true },
+                    { id: "cpk2", text: "📦 2250₽ (50 видео)", action: "goTo('card_invoice_10')", class: "", visible: true },
+                    { id: "cpk3", text: "🎁 4250₽ (100 видео)", action: "goTo('card_invoice_10')", class: "", visible: true },
+                    { id: "cpk4", text: "💎 20 000₽ (500 видео)", action: "goTo('card_invoice_10')", class: "style-warning", visible: true },
+                    { id: "cpk5", text: "🔙 Назад к способам оплаты", action: "goTo('pay_method')", class: "", visible: true }
+                ],
+                navId: "btn-card-packages"
+            },
+            card_invoice_10: {
+                title: "Инвойс карты (Lava)",
+                text: "Сумма к оплате:\n\n🎬 10 видео $6.2 (500₽)\n\nПроводя оплату вы соглашаетесь с <a href=\"https://aiviral.agency/dogovor-oferta/\" target=\"_blank\">договором-офертой</a> и <a href=\"https://aiviral.agency/politika-konfidencialnosti/\" target=\"_blank\">политикой конфиденциальности</a>",
+                buttons: [
+                    { id: "ci1", text: "💳 Оплатить картой", action: "window.open('https://app.lava.top', '_blank')", class: "style-success", visible: true },
+                    { id: "ci2", text: "📝 Договор-оферта", action: "window.open('https://aiviral.agency/dogovor-oferta/', '_blank')", class: "", visible: true },
+                    { id: "ci3", text: "📝 Политика конфиденциальности", action: "window.open('https://aiviral.agency/politika-konfidencialnosti/', '_blank')", class: "", visible: true },
+                    { id: "ci4", text: "❓ Поддержка", action: "window.open('https://t.me/aiviral_main', '_blank')", class: "", visible: true },
+                    { id: "ci5", text: "🔙 Назад к пакетам", action: "goTo('card_packages')", class: "", visible: true }
+                ],
+                navId: "btn-card-inv"
+            },
+            crypto_networks: {
+                title: "Сети крипты",
+                text: "Выберите сеть для пополнения кошелька:",
+                buttons: [
+                    { id: "cn1", text: "💎 TON (Gram)", action: "goTo('crypto_deposit_ton')", class: "style-primary", visible: true },
+                    { id: "cn2", text: "⚡ USDT (BEP20)", action: "goTo('crypto_deposit_ton')", class: "style-success", visible: true },
+                    { id: "cn3", text: "🟣 USDT (SOL)", action: "goTo('crypto_deposit_ton')", class: "style-purple", visible: true },
+                    { id: "cn4", text: "🟡 BNB (BEP20)", action: "goTo('crypto_deposit_ton')", class: "style-warning", visible: true },
+                    { id: "cn5", text: "🔙 Назад к способам оплаты", action: "goTo('pay_method')", class: "", visible: true }
+                ],
+                navId: "btn-crypto-networks"
+            },
+            crypto_deposit_ton: {
+                title: "Крипто-депозит (TON)",
+                text: "💠 Пополнение через TON (Gram)\n\n💶 Мин. депозит: 0.50 USDT\n💷 Макс. депозит: 10000.00 USDT\n\nОтправьте любую сумму в пределах лимита на ваш персональный адрес:\n\n🔺 Адрес:\n<div class=\"code-box\">EQAFF6Tf_jAATTaj-hs1ireZ0vfdP7bL8x4fHWmM32wvP-G5</div>\n\n🏷 Memo/Tag: <code style=\"color:#f59e0b;\">205756223</code> (обязателен к указанию)\n\n✅ После отправки: нажмите кнопку «Оплачено» ниже, чтобы зачислить баланс!",
+                hasQr: true,
+                buttons: [
+                    { id: "cdt1", text: "📋 Скопировать адрес", action: "alert('Адрес скопирован в буфер!')", class: "", visible: true },
+                    { id: "cdt2", text: "✅ Оплачено", action: "alert('Запрос проверки оплаты отправлен!')", class: "style-success", visible: true },
+                    { id: "cdt3", text: "🔙 Назад к сетям", action: "goTo('crypto_networks')", class: "", visible: true }
+                ],
+                navId: "btn-crypto-ton"
+            },
+            profile_calculated: {
+                title: "4. Личный кабинет (Профиль)",
+                text: "👤 Личный кабинет\n\n🆔 ID: 7937165663\n📝 Имя: Rick\n\n📊 Баланс генераций: 11 видео\n🎁 Бесплатные генерации: 1\n💎 Платные генерации: 10\n💵 Баланс кошелька: 8.40 USDT (~756₽)\n\n💰 Доступно к выводу: 15.00 USDT",
+                buttons: [
+                    { id: "pc1", text: "💸 Вывести средства", action: "goTo('withdraw_screen')", class: "style-success", visible: true },
+                    { id: "pc2", text: "🤝 Реферальная программа", action: "goTo('referral_screen')", class: "style-warning", visible: true },
+                    { id: "pc3", text: "📜 История генераций", action: "alert('История пуста')", class: "", visible: true },
+                    { id: "pc4", text: "💬 Поддержка", action: "window.open('https://t.me/aiviral_main', '_blank')", class: "", visible: true },
+                    { id: "pc5", text: "ℹ️ О проекте", action: "goTo('about_screen')", class: "", visible: true },
+                    { id: "pc6", text: "🔙 Главное меню", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-profile-calc"
+            },
+            withdraw_screen: {
+                title: "Вывод реферальных",
+                text: "💼 Вывод реферального вознаграждения\n\nМинимальная сумма для вывода: $5.00 USDT.\n\nВаш доступный кешбэк: 15.00 USDT\n\nДля оформления выплаты напишите нашему менеджеру в поддержку. Заявка обрабатывается в течение 24 часов:",
+                buttons: [
+                    { id: "ws1", text: "💬 Написать менеджеру", action: "window.open('https://t.me/aiviral_main', '_blank')", class: "style-success", visible: true },
+                    { id: "ws2", text: "🔙 В личный кабинет", action: "goTo('profile_calculated')", class: "", visible: true },
+                    { id: "ws3", text: "🏠 Главное меню", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-withdraw"
+            },
+            referral_screen: {
+                title: "Партнерская программа",
+                text: "💼 Партнерская реферальная программа\n\nПолучайте доход от каждого пополнения приглашенных пользователей:\n\n🥇 Линия 1: 25% пожизненно\n🥈 Линия 2: 10% пожизненно\n\nВаша персональная ссылка:\n<div class=\"code-box\">https://t.me/viralapp_official_bot?start=expert_7937165663</div>",
+                buttons: [
+                    { id: "rs1", text: "📥 Пригласить друга", action: "openReferralInviteModal()", class: "", visible: true },
+                    { id: "rs2", text: "🔙 В личный кабинет", action: "goTo('profile_calculated')", class: "", visible: true },
+                    { id: "rs3", text: "🏠 Главное меню", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-referral"
+            },
+            about_screen: {
+                title: "О проекте",
+                text: "📱 О проекте ViralApp (AIVIRAL)\n\nViralApp — это платформа для создания вирусных видео с помощью генеративного ИИ.\n\n✨ Как это работает:\n1. Выбери шаблон или напиши свой промпт\n2. Получи уникальное видео в лучшем качестве!",
+                buttons: [
+                    { id: "as1", text: "💬 Поддержка проекта", action: "window.open('https://t.me/aiviral_main', '_blank')", class: "", visible: true },
+                    { id: "as2", text: "🔙 В личный кабинет", action: "goTo('profile_calculated')", class: "", visible: true },
+                    { id: "as3", text: "🏠 Главное меню", action: "goTo('main_menu')", class: "", visible: true }
+                ],
+                navId: "btn-about"
+            }
+        };
+
+        const defaultTemplates = [
+            {
+                id: "mama_taxi",
+                slug: "mama-vyzyvay",
+                name: "🚕 Мама вызывай",
+                status: "active",
+                views_count: 1136642,
+                views_badge: "🔥 1,136,642 просмотров",
+                video_preview: "/proto-media/mother_frame.jpg",
+                statistic_preview: "/proto-media/statistic.jpeg",
+                prompt_template: "A large bus is parked along a cobblestone road at a Slavic-style bus stop decorated with folk patterns. Three elderly Slavic grandmothers dance joyfully... Slavic {gender_child} named {name}..."
+            },
+            {
+                id: "228",
+                slug: "mops-dostavka",
+                name: "🐶 Мопс доставка",
+                status: "active",
+                views_count: 850000,
+                views_badge: "🔥 850,000+ просмотров",
+                video_preview: "/proto-media/mops_frame.jpg",
+                statistic_preview: "/proto-media/mops.jpeg",
+                prompt_template: "Жирдяй (очень толстый человек) стоит у двери квартиры и ругает мопса в желтом рюкзаке... Мопс отвечает: 'Мне пофиг, я {name}'..."
+            }
+        ];
+
+        // Load saved state or default
+        let cmsScreens = JSON.parse(localStorage.getItem('viralapp_cms_screens') || 'null') || defaultScreensConfig;
+        let cmsTemplates = JSON.parse(localStorage.getItem('viralapp_cms_templates') || 'null') || defaultTemplates;
+
+        function saveCmsState() {
+            localStorage.setItem('viralapp_cms_screens', JSON.stringify(cmsScreens));
+            localStorage.setItem('viralapp_cms_templates', JSON.stringify(cmsTemplates));
+        }
+
+        // View Mode Switcher
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('modeBtnNav').classList.toggle('active', mode === 'nav');
+            document.getElementById('modeBtnAdmin').classList.toggle('active', mode === 'admin');
+            document.getElementById('panelNav').style.display = mode === 'nav' ? 'flex' : 'none';
+            document.getElementById('panelAdmin').style.display = mode === 'admin' ? 'flex' : 'none';
+
+            if (mode === 'admin') {
+                initAdminPanel();
+            }
+        }
+
+        // Switch CMS Subtab
+        function switchCmsSubtab(subtab) {
+            currentCmsSubtab = subtab;
+            document.querySelectorAll('.cms-subtab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('subtab-' + subtab).classList.add('active');
+
+            document.getElementById('cmsSecTexts').style.display = subtab === 'texts' ? 'block' : 'none';
+            document.getElementById('cmsSecButtons').style.display = subtab === 'buttons' ? 'block' : 'none';
+            document.getElementById('cmsSecTemplates').style.display = subtab === 'templates' ? 'block' : 'none';
+
+            if (subtab === 'buttons') renderCmsButtonsEditor();
+            if (subtab === 'templates') renderCmsTemplatesEditor();
+        }
+
+        // Initialize Admin inputs
+        function initAdminPanel() {
+            const savedToken = localStorage.getItem('viralapp_gh_pat') || '';
+            document.getElementById('ghTokenInput').value = savedToken;
+
+            // Update screen select and text
+            const sel = document.getElementById('cmsScreenSelect');
+            sel.value = currentScreen in cmsScreens ? currentScreen : 'main_menu';
+            document.getElementById('cmsScreenTextarea').value = cmsScreens[sel.value]?.text || '';
+
+            renderCmsButtonsEditor();
+            renderCmsTemplatesEditor();
+        }
+
+        function onGhTokenChange(val) {
+            localStorage.setItem('viralapp_gh_pat', val.trim());
+        }
+
+        // On screen selected in CMS
+        function onCmsScreenSelect(screenKey) {
+            document.getElementById('cmsScreenTextarea').value = cmsScreens[screenKey]?.text || '';
+            goTo(screenKey);
+            if (currentCmsSubtab === 'buttons') {
+                renderCmsButtonsEditor();
+            }
+        }
+
+        function onScreenTextareaInput(val) {
+            const selKey = document.getElementById('cmsScreenSelect').value;
+            if (cmsScreens[selKey]) {
+                cmsScreens[selKey].text = val;
+                saveCmsState();
+                renderScreen(selKey);
+            }
+        }
+
+        // Render Buttons Editor
+        function renderCmsButtonsEditor() {
+            const selKey = document.getElementById('cmsScreenSelect').value;
+            const screen = cmsScreens[selKey];
+            const container = document.getElementById('cmsButtonsContainer');
+            document.getElementById('cmsBtnScreenTitle').innerText = screen?.title || selKey;
+
+            if (!screen || !screen.buttons) {
+                container.innerHTML = '<div style="color: #64748b; font-size: 13px;">У этого экрана нет кнопок.</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            screen.buttons.forEach((btn, index) => {
+                const item = document.createElement('div');
+                item.className = 'button-edit-item ' + (btn.visible === false ? 'hidden-btn' : '');
+                item.innerHTML = `
+                    <div class="btn-order-controls">
+                        <button class="btn-order-arrow" title="Переместить выше" onclick="moveButtonOrder('${selKey}', ${index}, -1)">▲</button>
+                        <button class="btn-order-arrow" title="Переместить ниже" onclick="moveButtonOrder('${selKey}', ${index}, 1)">▼</button>
+                    </div>
+                    <div style="font-size: 12px; font-weight: 700; color: #64748b; width: 22px;">#${index + 1}</div>
+                    <input type="text" class="admin-input" style="flex: 1;" value="${escapeHtml(btn.text)}" oninput="updateButtonText('${selKey}', ${index}, this.value)">
+                    <select class="admin-select" style="width: 140px;" onchange="updateButtonStyle('${selKey}', ${index}, this.value)">
+                        <option value="" ${btn.class === '' ? 'selected' : ''}>Серый</option>
+                        <option value="style-primary" ${btn.class === 'style-primary' ? 'selected' : ''}>🔵 Primary</option>
+                        <option value="style-success" ${btn.class === 'style-success' ? 'selected' : ''}>🟢 Success</option>
+                        <option value="style-warning" ${btn.class === 'style-warning' ? 'selected' : ''}>🟡 Warning</option>
+                        <option value="style-purple" ${btn.class === 'style-purple' ? 'selected' : ''}>🟣 Purple</option>
+                    </select>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: #cbd5e1; cursor: pointer; user-select: none;">
+                        <input type="checkbox" ${btn.visible !== false ? 'checked' : ''} onchange="toggleButtonVisibility('${selKey}', ${index}, this.checked)">
+                        👁️
+                    </label>
+                    <button class="btn-delete-row" title="Удалить кнопку" onclick="deleteButtonRow('${selKey}', ${index})">✕</button>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function moveButtonOrder(screenKey, index, direction) {
+            const buttons = cmsScreens[screenKey].buttons;
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= buttons.length) return;
+            const temp = buttons[index];
+            buttons[index] = buttons[newIndex];
+            buttons[newIndex] = temp;
+            saveCmsState();
+            renderCmsButtonsEditor();
+            renderScreen(screenKey);
+        }
+
+        function updateButtonText(screenKey, index, text) {
+            cmsScreens[screenKey].buttons[index].text = text;
+            saveCmsState();
+            renderScreen(screenKey);
+        }
+
+        function updateButtonStyle(screenKey, index, styleClass) {
+            cmsScreens[screenKey].buttons[index].class = styleClass;
+            saveCmsState();
+            renderScreen(screenKey);
+        }
+
+        function toggleButtonVisibility(screenKey, index, isVisible) {
+            cmsScreens[screenKey].buttons[index].visible = isVisible;
+            saveCmsState();
+            renderCmsButtonsEditor();
+            renderScreen(screenKey);
+        }
+
+        function deleteButtonRow(screenKey, index) {
+            if (confirm('Удалить эту кнопку?')) {
+                cmsScreens[screenKey].buttons.splice(index, 1);
+                saveCmsState();
+                renderCmsButtonsEditor();
+                renderScreen(screenKey);
+            }
+        }
+
+        // Add Button Modal Handlers
+        function openAddButtonModal() {
+            document.getElementById('newBtnText').value = '';
+            document.getElementById('newBtnStyle').value = '';
+            document.getElementById('newBtnActionType').value = 'goto';
+            document.getElementById('newBtnTargetBox').style.display = 'flex';
+            document.getElementById('newBtnUrlBox').style.display = 'none';
+            document.getElementById('addButtonModal').style.display = 'flex';
+        }
+
+        function closeAddButtonModal() {
+            document.getElementById('addButtonModal').style.display = 'none';
+        }
+
+        function onNewBtnActionTypeChange(type) {
+            document.getElementById('newBtnTargetBox').style.display = type === 'goto' ? 'flex' : 'none';
+            document.getElementById('newBtnUrlBox').style.display = type === 'url' ? 'flex' : 'none';
+        }
+
+        function saveNewButton() {
+            const text = document.getElementById('newBtnText').value.trim();
+            if (!text) {
+                alert('Пожалуйста, введите текст кнопки');
+                return;
+            }
+            const selKey = document.getElementById('cmsScreenSelect').value;
+            const style = document.getElementById('newBtnStyle').value;
+            const actionType = document.getElementById('newBtnActionType').value;
+
+            let actionCode = "goTo('main_menu')";
+            if (actionType === 'goto') {
+                const targetScreen = document.getElementById('newBtnTargetScreen').value;
+                actionCode = `goTo('${targetScreen}')`;
+            } else if (actionType === 'url') {
+                const url = document.getElementById('newBtnUrl').value.trim() || 'https://aiviral.agency';
+                actionCode = `window.open('${url}', '_blank')`;
+            } else if (actionType === 'alert') {
+                actionCode = "alert('Действие выполнено!')";
+            }
+
+            if (!cmsScreens[selKey].buttons) cmsScreens[selKey].buttons = [];
+            cmsScreens[selKey].buttons.push({
+                id: 'btn_' + Date.now(),
+                text: text,
+                action: actionCode,
+                class: style,
+                visible: true
+            });
+
+            saveCmsState();
+            closeAddButtonModal();
+            renderCmsButtonsEditor();
+            renderScreen(selKey);
+        }
+
+        // Render Templates Editor
+        function renderCmsTemplatesEditor() {
+            const container = document.getElementById('cmsTemplatesContainer');
+            container.innerHTML = '';
+
+            cmsTemplates.forEach((tpl, idx) => {
+                const card = document.createElement('div');
+                card.className = 'template-cms-card';
+                card.innerHTML = `
+                    <div class="template-cms-header">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 14px; font-weight: 700; color: #f8fafc;">${escapeHtml(tpl.name)}</span>
+                            <span class="badge-tag badge-staging">${tpl.status}</span>
+                        </div>
+                        <button class="btn-delete-row" onclick="deleteTemplateItem(${idx})">Удалить</button>
+                    </div>
+                    <div class="template-thumb-preview">
+                        <img src="${tpl.video_preview}" alt="Превью" title="Кадр видео">
+                        <img src="${tpl.statistic_preview}" alt="Стата" title="Скриншот статистики">
+                        <div style="font-size: 11.5px; color: #94a3b8; display: flex; flex-direction: column; justify-content: center; gap: 3px;">
+                            <div>ID: <code style="color: #60a5fa;">${tpl.id}</code></div>
+                            <div style="color: #fbbf24;">${escapeHtml(tpl.views_badge)}</div>
+                        </div>
+                    </div>
+                    <div class="admin-field-group">
+                        <label>Название</label>
+                        <input type="text" class="admin-input" value="${escapeHtml(tpl.name)}" onchange="updateTemplateField(${idx}, 'name', this.value)">
+                    </div>
+                    <div class="admin-field-group">
+                        <label>Бейдж просмотров</label>
+                        <input type="text" class="admin-input" value="${escapeHtml(tpl.views_badge)}" onchange="updateTemplateField(${idx}, 'views_badge', this.value)">
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function updateTemplateField(idx, field, val) {
+            cmsTemplates[idx][field] = val;
+            saveCmsState();
+            syncCatalogMenuButtons();
+        }
+
+        function deleteTemplateItem(idx) {
+            if (confirm('Удалить этот шаблон из каталога?')) {
+                cmsTemplates.splice(idx, 1);
+                saveCmsState();
+                syncCatalogMenuButtons();
+                renderCmsTemplatesEditor();
+            }
+        }
+
+        function openAddTemplateModal() {
+            document.getElementById('tplIdInput').value = '';
+            document.getElementById('tplNameInput').value = '';
+            document.getElementById('tplBadgeInput').value = '🔥 1,000,000+ просмотров';
+            document.getElementById('tplPreviewInput').value = '/proto-media/mother_frame.jpg';
+            document.getElementById('tplStatInput').value = '/proto-media/statistic.jpeg';
+            document.getElementById('tplPromptInput').value = 'Сцена: вирусный ролик для {name}...';
+            document.getElementById('addTemplateModal').style.display = 'flex';
+        }
+
+        function closeAddTemplateModal() {
+            document.getElementById('addTemplateModal').style.display = 'none';
+        }
+
+        function saveNewTemplate() {
+            const id = document.getElementById('tplIdInput').value.trim();
+            const name = document.getElementById('tplNameInput').value.trim();
+            if (!id || !name) {
+                alert('Заполните ID и название шаблона');
+                return;
+            }
+
+            const newTpl = {
+                id: id,
+                slug: id.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                name: name,
+                status: "active",
+                views_count: 1000000,
+                views_badge: document.getElementById('tplBadgeInput').value.trim() || '🔥 1,000,000+ просмотров',
+                video_preview: document.getElementById('tplPreviewInput').value.trim() || '/proto-media/mother_frame.jpg',
+                statistic_preview: document.getElementById('tplStatInput').value.trim() || '/proto-media/statistic.jpeg',
+                prompt_template: document.getElementById('tplPromptInput').value.trim()
+            };
+
+            cmsTemplates.push(newTpl);
+            saveCmsState();
+            syncCatalogMenuButtons();
+            closeAddTemplateModal();
+            renderCmsTemplatesEditor();
+        }
+
+        function syncCatalogMenuButtons() {
+            if (cmsScreens['catalog_menu']) {
+                const btns = cmsTemplates.map(tpl => ({
+                    id: 'tpl_btn_' + tpl.id,
+                    text: tpl.name,
+                    action: "goTo('meme_selected_flow')",
+                    class: "",
+                    visible: true
+                }));
+                btns.push({
+                    id: 'cat_back',
+                    text: '⏪ Вернуться назад',
+                    action: "goTo('create_video_menu')",
+                    class: "",
+                    visible: true
+                });
+                cmsScreens['catalog_menu'].buttons = btns;
+                saveCmsState();
+            }
+        }
+
+        // Export / Import
+        function exportCmsJson() {
+            const data = {
+                version: "1.0",
+                exported_at: new Date().toISOString(),
+                screens: cmsScreens,
+                templates: cmsTemplates
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `viralapp-cms-staging-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function triggerImportJson() {
+            document.getElementById('importJsonInput').click();
+        }
+
+        function handleImportJsonFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const parsed = JSON.parse(evt.target.result);
+                    if (parsed.screens) cmsScreens = parsed.screens;
+                    if (parsed.templates) cmsTemplates = parsed.templates;
+                    saveCmsState();
+                    initAdminPanel();
+                    renderScreen(currentScreen);
+                    alert('✅ Конфигурация успешно загружена!');
+                } catch (err) {
+                    alert('Ошибка парсинга JSON: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function resetCmsToDefaults() {
+            if (confirm('Сбросить все тексты и кнопки к исходным значениям?')) {
+                cmsScreens = JSON.parse(JSON.stringify(defaultScreensConfig));
+                cmsTemplates = JSON.parse(JSON.stringify(defaultTemplates));
+                saveCmsState();
+                initAdminPanel();
+                renderScreen(currentScreen);
+                alert('Конфигурация сброшена.');
+            }
+        }
+
+        // ════ GITHUB PUSH INTEGRATION ════
+        async function pushChangesToGitHub() {
+            const token = (document.getElementById('ghTokenInput').value || '').trim();
+            const commitMsg = (document.getElementById('ghCommitMessage').value || '').trim() || 'chore(cms): update bot texts and templates via staging admin';
+            const statusBox = document.getElementById('ghStatusBox');
+            const pushBtn = document.getElementById('btnPushGh');
+
+            if (!token) {
+                statusBox.className = 'gh-status-box error';
+                statusBox.innerHTML = '⚠️ <b>GitHub Token не указан!</b> Введите Personal Access Token (PAT) с правами <code>repo</code> в поле выше.';
+                return;
+            }
+
+            pushBtn.disabled = true;
+            statusBox.className = 'gh-status-box loading';
+            statusBox.innerHTML = '⏳ <b>Подключение к GitHub REST API...</b> Подготовка медиа-каталога и конфигурации...';
+
+            const owner = 'LifeOfPunk';
+            const repo = 'meme_main_telegram_bot';
+            const branch = 'staging';
+
+            try {
+                // Prepare templates.json content
+                const fullTemplatesData = {
+                    version: "1.0",
+                    updated_at: new Date().toISOString(),
+                    templates: cmsTemplates.map(t => ({
+                        id: t.id,
+                        slug: t.slug || t.id,
+                        name: t.name,
+                        status: t.status || "active",
+                        views_count: t.views_count || 1000000,
+                        views_badge: t.views_badge || "🔥 1,000,000+ просмотров",
+                        description: t.description || t.name,
+                        media: {
+                            video: "./media/" + (t.id === '228' ? 'mopsvideo.mp4' : 'mother.MP4'),
+                            video_preview: t.video_preview || "/proto-media/mother_frame.jpg",
+                            statistic: "./media/" + (t.id === '228' ? 'mops.jpeg' : 'statistic.jpeg'),
+                            statistic_preview: t.statistic_preview || "/proto-media/statistic.jpeg"
+                        },
+                        inputs: [
+                            { key: "name", label: "Имя персонажа", type: "text", placeholder: "Например, Rick", required: true },
+                            { key: "gender", label: "Пол персонажа", type: "choice", options: [{ value: "boy", label: "👦🏻 Я мальчик" }, { value: "girl", label: "🧒🏼 Я девочка" }], required: true }
+                        ],
+                        prompt_template: t.prompt_template || "Сцена для {name}...",
+                        duration: 8
+                    }))
+                };
+
+                const templatesJsonStr = JSON.stringify(fullTemplatesData, null, 2);
+                const base64Content = btoa(unescape(encodeURIComponent(templatesJsonStr)));
+
+                // 1. Get current SHA for media/templates.json
+                statusBox.innerHTML = '🔍 Чтение текущего SHA <code>media/templates.json</code> на ветке <code>staging</code>...';
+                const fileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/media/templates.json?ref=${branch}`;
+                
+                const getResp = await fetch(fileUrl, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github+json'
+                    }
+                });
+
+                let sha = null;
+                if (getResp.ok) {
+                    const fileMeta = await getResp.json();
+                    sha = fileMeta.sha;
+                }
+
+                // 2. Commit update to GitHub
+                statusBox.innerHTML = '📦 Отправка коммита в GitHub (ветка <code>staging</code>)...';
+                const putResp = await fetch(fileUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: commitMsg,
+                        content: base64Content,
+                        branch: branch,
+                        ...(sha ? { sha: sha } : {})
+                    })
+                });
+
+                if (!putResp.ok) {
+                    const errData = await putResp.json();
+                    throw new Error(errData.message || `HTTP ${putResp.status}`);
+                }
+
+                const commitResult = await putResp.json();
+                const commitSha = commitResult.commit?.sha?.slice(0, 7) || 'success';
+                const commitUrl = commitResult.commit?.html_url || `https://github.com/${owner}/${repo}/commits/${branch}`;
+                const actionsUrl = `https://github.com/${owner}/${repo}/actions`;
+
+                statusBox.className = 'gh-status-box success';
+                statusBox.innerHTML = `
+                    🎉 <b>Коммит успешно создан и запушен в ветку <code>staging</code>!</b><br>
+                    🏷 <b>Хеш:</b> <a href="${commitUrl}" target="_blank" style="color: #4ade80; text-decoration: underline;">${commitSha}</a> • 
+                    🚀 <a href="${actionsUrl}" target="_blank" style="color: #60a5fa; text-decoration: underline;">Следить за деплоем в GitHub Actions</a>
+                `;
+
+            } catch (err) {
+                console.error('GitHub Push Error:', err);
+                statusBox.className = 'gh-status-box error';
+                statusBox.innerHTML = `❌ <b>Ошибка при пуше в GitHub:</b> ${escapeHtml(err.message)}<br><small style="color:#94a3b8;">Проверьте правильность токена и наличие прав на запись в репозиторий.</small>`;
+            } finally {
+                pushBtn.disabled = false;
+            }
+        }
+
+        function escapeHtml(str) {
+            return (str || '').toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        // Toggles
+        function toggleFreeQuota() {
+            hasFreeQuota = document.getElementById('quotaToggle').checked;
+            renderScreen(currentScreen);
+        }
+
+        function toggleReferralCashback() {
+            hasReferralCashback = document.getElementById('cashbackToggle').checked;
+            if (currentScreen === 'profile_calculated') {
+                renderScreen('profile_calculated');
+            }
+        }
+
+        function goTo(screenKey) {
+            closeShareModal();
+            closeImageViewer();
+            currentScreen = screenKey;
+            renderScreen(screenKey);
+
+            if (currentMode === 'admin') {
+                const sel = document.getElementById('cmsScreenSelect');
+                if (sel) {
+                    sel.value = screenKey;
+                    document.getElementById('cmsScreenTextarea').value = cmsScreens[screenKey]?.text || '';
+                    if (currentCmsSubtab === 'buttons') renderCmsButtonsEditor();
+                }
+            }
+        }
+
+        function renderScreen(screenKey) {
+            const screen = cmsScreens[screenKey] || defaultScreensConfig[screenKey];
+            if (!screen) return;
+
+            const chat = document.getElementById('chat');
+            chat.innerHTML = '';
+
+            document.querySelectorAll('.step-nav-btn').forEach(b => b.classList.remove('active'));
+            if (screen.navId) {
+                const navBtn = document.getElementById(screen.navId);
+                if (navBtn) navBtn.classList.add('active');
+            }
+
+            const msg = document.createElement('div');
+            msg.className = 'tg-msg';
+
+            let contentHtml = '';
+            if (screen.mediaGroup && screen.mediaGroup.length > 0) {
+                contentHtml += `<div class="tg-media-group">`;
+                screen.mediaGroup.forEach(item => {
+                    const caption = (item.badge || item.title || '').replace(/'/g, "\\'");
+                    contentHtml += `
+                        <div class="tg-media-card" onclick="openImageViewer('${item.src}', '${caption}')" title="Нажмите, чтобы увеличить">
+                            <img src="${item.src}" alt="${item.title || 'Медиа'}">
+                            <span class="tg-media-zoom-hint">🔍 Zoom</span>
+                            ${item.badge ? `<span class="tg-media-badge">${item.badge}</span>` : ''}
+                        </div>
+                    `;
+                });
+                contentHtml += `</div>`;
+            }
+
+            if (screen.hasQr) {
+                contentHtml += `
+                <div class="tg-qr-box">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=EQAFF6Tf_jAATTaj-hs1ireZ0vfdP7bL8x4fHWmM32wvP-G5" alt="QR Code">
+                </div>`;
+            }
+
+            // Text with formatted linebreaks and dynamic variables
+            let displayText = screen.text;
+            if (screenKey === 'profile_calculated') {
+                const freeCount = hasFreeQuota ? 1 : 0;
+                const paidCount = 10;
+                const totalGenerations = freeCount + paidCount;
+                displayText = `👤 Личный кабинет\n\n🆔 ID: 7937165663\n📝 Имя: Rick\n\n📊 Баланс генераций: ${totalGenerations} видео\n🎁 Бесплатные генерации: ${freeCount}\n💎 Платные генерации: ${paidCount}\n💵 Баланс кошелька: 8.40 USDT (~756₽)`;
+                if (hasReferralCashback) {
+                    displayText += `\n\n💰 Доступно к выводу: 15.00 USDT`;
+                }
+            }
+
+            contentHtml += `<div>${displayText.replace(/\\n/g, '<br>')}</div><span class="tg-msg-time">21:22</span>`;
+            msg.innerHTML = contentHtml;
+            chat.appendChild(msg);
+
+            // Keyboards rendering
+            if (screen.buttons && screen.buttons.length > 0) {
+                const kb = document.createElement('div');
+                kb.className = 'tg-keyboard';
+
+                screen.buttons.forEach(btn => {
+                    if (btn.visible === false) return;
+                    if (btn.condition === 'freeQuota' && !hasFreeQuota) return;
+                    if (btn.condition === 'cashback' && !hasReferralCashback) return;
+
+                    const b = document.createElement('div');
+                    b.className = `tg-btn ${btn.class || ''}`;
+                    b.innerText = btn.text;
+                    b.setAttribute('onclick', btn.action);
+                    kb.appendChild(b);
+                });
+                chat.appendChild(kb);
+            }
+        }
+
+        // Modals
+        function openReferralInviteModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.id = 'shareModal';
+            modal.innerHTML = `
+                <div class="modal-box">
+                    <h3>✉️ Сообщение другу при приглашении:</h3>
+                    <p>
+                        👋 <b>Привет! Я генерирую вирусные ролики в ViralApp.</b><br><br>
+                        Присоединяйся по моей ссылке, получишь бесплатную генерацию:<br>
+                        <span style="color:#64b5f6;">https://t.me/viralapp_official_bot?start=expert_7937165663</span>
+                    </p>
+                    <div style="background:#242f3d; color:#a5d6a7; padding:8px; border-radius:6px; text-align:center; font-size:12px; margin-bottom:12px;">
+                        [🎁 Забрать бесплатную генерацию]
+                    </div>
+                    <div class="tg-btn style-success" onclick="closeShareModal()">Понятно, отправить</div>
+                </div>
+            `;
+            document.getElementById('phoneScreen').appendChild(modal);
+        }
+
+        function openShareModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.id = 'shareModal';
+            modal.innerHTML = `
+                <div class="modal-box">
+                    <h3>✉️ Сообщение в чат другу (после генерации):</h3>
+                    <p>
+                        🎬 <b>Смотри, какой вирусный ролик я сгенерировал в ViralApp!</b> 🔥<br><br>
+                        Забирай бесплатную попытку по моей ссылке и сделай своё видео за 60 секунд:<br>
+                        <span style="color:#64b5f6;">https://t.me/viralapp_official_bot?start=expert_7937165663</span>
+                    </p>
+                    <div style="background:#242f3d; color:#a5d6a7; padding:8px; border-radius:6px; text-align:center; font-size:12px; margin-bottom:12px;">
+                        [⚡ Создать своё видео]
+                    </div>
+                    <div class="tg-btn style-success" onclick="closeShareModal()">Понятно, отправить</div>
+                </div>
+            `;
+            document.getElementById('phoneScreen').appendChild(modal);
+        }
+
+        function closeShareModal() {
+            const m = document.getElementById('shareModal');
+            if (m) m.remove();
+        }
+
+        function openImageViewer(src, caption) {
+            closeImageViewer();
+            const modal = document.createElement('div');
+            modal.className = 'image-viewer-modal';
+            modal.id = 'imageViewerModal';
+            modal.onclick = function(e) {
+                if (e.target === modal || e.target.classList.contains('image-viewer-close')) {
+                    closeImageViewer();
+                }
+            };
+            modal.innerHTML = `
+                <div class="image-viewer-close" onclick="closeImageViewer()">✕</div>
+                <img src="${src}" alt="Preview" onclick="event.stopPropagation()">
+                ${caption ? `<div class="image-viewer-caption" onclick="event.stopPropagation()">${caption}</div>` : ''}
+                <div class="tg-btn style-secondary" style="margin-top:14px; padding:8px 18px; font-size:12px; cursor:pointer;" onclick="closeImageViewer()">Закрыть просмотр</div>
+            `;
+            document.getElementById('phoneScreen').appendChild(modal);
+        }
+
+        function closeImageViewer() {
+            const m = document.getElementById('imageViewerModal');
+            if (m) m.remove();
+        }
+
+        // Init on load
+        document.getElementById('quotaToggle').checked = true;
+        document.getElementById('cashbackToggle').checked = true;
+        renderScreen('main_menu');
+    </script>
+</body>
+</html>

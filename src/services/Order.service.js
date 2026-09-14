@@ -9,8 +9,24 @@ export class OrderService {
         await redis.lpush('all_orders', orderId);
         await redis.lpush(`user_orders:${userId}`, orderId);
 
-        if (orderData.isFiat && orderData.email) {
-            await redis.set(`email_to_order:${orderData.email}`, orderId);
+        if (orderData.email || orderData.input?.email) {
+            const email = orderData.email || orderData.input?.email;
+            await redis.set(`email_to_order:${email}`, orderId);
+        }
+
+        if (orderData.parentId) {
+            await redis.set(`parent_to_order:${orderData.parentId}`, orderId);
+        }
+
+        const outputUid = orderData.output?.id || orderData.output?.uid;
+        if (outputUid) {
+            await redis.set(`parent_to_order:${outputUid}`, orderId);
+        }
+
+        const outputAddress = orderData.output?.address || orderData.output?.Address || orderData.output?.wallet;
+        if (outputAddress) {
+            await redis.set(`address_to_order:${outputAddress.toLowerCase()}`, orderId);
+            await redis.set(`parent_to_order:${outputAddress}`, orderId);
         }
 
         console.log(`📝 Order ${orderId} created for user ${userId}`);
@@ -19,8 +35,30 @@ export class OrderService {
 
     // Получение заказа по ID
     async getOrderById(orderId) {
+        if (!orderId) return null;
         const order = await redis.get(`order:${orderId}`);
         return order ? JSON.parse(order) : null;
+    }
+
+    // Получение заказа по внешнему ID (Lava invoiceId, 0xProcessing UID)
+    async getOrderByParentId(parentId) {
+        if (!parentId) return null;
+        const orderId = await redis.get(`parent_to_order:${parentId}`);
+        return orderId ? await this.getOrderById(orderId) : null;
+    }
+
+    // Получение заказа по адресу кошелька
+    async getOrderByAddress(address) {
+        if (!address) return null;
+        const orderId = await redis.get(`address_to_order:${address.toLowerCase()}`);
+        return orderId ? await this.getOrderById(orderId) : null;
+    }
+
+    // Получение заказа по email
+    async getOrderByEmail(email) {
+        if (!email) return null;
+        const orderId = await redis.get(`email_to_order:${email}`);
+        return orderId ? await this.getOrderById(orderId) : null;
     }
 
     // Обновление заказа
@@ -71,17 +109,12 @@ export class OrderService {
     }
 
     // Отметка заказа как оплаченного
-    async markAsPaid(orderId) {
+    async markAsPaid(orderId, extraData = {}) {
         return await this.updateOrder(orderId, { 
             isPaid: true, 
-            paidAt: new Date().toISOString() 
+            paidAt: new Date().toISOString(),
+            ...extraData
         });
-    }
-
-    // Получение заказа по email
-    async getOrderByEmail(email) {
-        const orderId = await redis.get(`email_to_order:${email}`);
-        return orderId ? await this.getOrderById(orderId) : null;
     }
 
     // Получение статистики платежей
@@ -96,6 +129,7 @@ export class OrderService {
         const usdtOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('USDT'));
         const usdcOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('USDC'));
         const tonOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('TON'));
+        const bnbOrders = cryptoOrders.filter(o => (o.crypto || o.currency || '').includes('BNB'));
         
         const stats = {
             total: orders.length,
@@ -106,13 +140,15 @@ export class OrderService {
             totalRevenue: paidOrders.reduce((sum, o) => sum + (o.amount || 0), 0),
             // Детальная статистика по валютам
             cryptoRevenue: {
-                usdt: usdtOrders.reduce((sum, o) => sum + (o.cryptoAmount || 0), 0),
-                usdc: usdcOrders.reduce((sum, o) => sum + (o.cryptoAmount || 0), 0),
-                ton: tonOrders.reduce((sum, o) => sum + (o.cryptoAmount || 0), 0),
+                usdt: usdtOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
+                usdc: usdcOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
+                ton: tonOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
+                bnb: bnbOrders.reduce((sum, o) => sum + (Number(o.cryptoAmount) || Number(o.input?.amount) || 0), 0),
                 count: {
                     usdt: usdtOrders.length,
                     usdc: usdcOrders.length,
-                    ton: tonOrders.length
+                    ton: tonOrders.length,
+                    bnb: bnbOrders.length
                 }
             },
             fiatRevenue: fiatOrders.reduce((sum, o) => sum + (o.amount || 0), 0)

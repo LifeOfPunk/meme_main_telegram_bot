@@ -24,6 +24,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - NODE_ENV=staging
       - BOT_NAME=meemee_official_bot
+      - KIE_MODEL=google/gemini-omni-flash-1-1
+      - KIE_PAID_MODEL=google/gemini-omni-flash-1-1
+      - KIE_FREE_MODEL=grok-imagine/text-to-video
     depends_on:
       redis:
         condition: service_healthy

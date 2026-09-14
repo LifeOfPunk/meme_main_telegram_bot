@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import { UserService } from './src/services/User.service.js';
-import { createMainMenuKeyboard } from './src/screens/keyboards.js';
-import redis from './src/redis.js';
+import { UserService } from '../src/services/User.service.js';
+import { createMainMenuKeyboard } from '../src/screens/keyboards.js';
+import redis from '../src/redis.js';
 
 const userService = new UserService();
 

@@ -1,11 +1,12 @@
-import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_TYPE_KEYBOARD, ABOUT_KEYBOARD } from '../config.js';
-import { createCryptoKeyboard, createChainKeyboard, createPaymentCryptoKeyboard, createAfterPaymentKeyboard, createMainMenuKeyboard } from '../screens/keyboards.js';
+import { MESSAGES, PACKAGES, SUPPORTED_CRYPTO, REFERRAL_ENABLED, REFERRAL_TYPE_KEYBOARD, ABOUT_KEYBOARD, GENERATION_COST_USDT } from '../config.js';
+import { createCryptoKeyboard, createChainKeyboard, createPaymentCryptoKeyboard, createAfterPaymentKeyboard, createMainMenuKeyboard, createProfileKeyboard } from '../screens/keyboards.js';
 import { PaymentCryptoService } from '../services/PaymentCrypto.service.js';
 import { PaymentFiatService } from '../services/PaymentFiat.service.js';
 import { UserService } from '../services/User.service.js';
 import { OrderService } from '../services/Order.service.js';
 import { ReferralService } from '../services/Referral.service.js';
 import { GenerationService } from '../services/Generation.service.js';
+import { currencyService } from '../services/Currency.service.js';
 
 const paymentCryptoService = new PaymentCryptoService();
 const paymentFiatService = new PaymentFiatService();
@@ -36,39 +37,57 @@ export async function handleBuy(ctx) {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
-        // Создаём кнопки для всех пакетов
-        const packageButtons = Object.keys(PACKAGES).map(key => {
-            const pkg = PACKAGES[key];
-            const discount = pkg.discount ? ` 🔥 -${pkg.discount}` : '';
-            return [{
-                text: `${pkg.emoji} ${pkg.title} - ${pkg.rub}₽${discount}`,
-                callback_data: `select_package_${key}`
-            }];
-        });
+        const buyText = `Для генерации видео пополните баланс удобным способом:`;
         
-        const buyText = `🎬 Чтобы сгенерировать видео, вам нужно их сначала купить, и после этого вы сможете уже генерировать новые видео.\n\n💎 Выберите подходящий пакет:`;
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '💎 Криптовалюта', callback_data: 'pay_crypto_deposit' }],
+                [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
+                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+            ]
+        };
         
         try {
             await ctx.editMessageText(buyText, {
-                reply_markup: {
-                    inline_keyboard: [
-                        ...packageButtons,
-                        [{ text: '🔙 Назад', callback_data: 'main_menu' }]
-                    ]
-                }
+                reply_markup: keyboard
             });
         } catch (editErr) {
             await ctx.reply(buyText, {
-                reply_markup: {
-                    inline_keyboard: [
-                        ...packageButtons,
-                        [{ text: '🔙 Назад', callback_data: 'main_menu' }]
-                    ]
-                }
+                reply_markup: keyboard
             });
         }
     } catch (err) {
         console.error('❌ Error in handleBuy:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+}
+
+// Обработчик экрана пакетов для банковской карты (TASK-02-03, TASK-15)
+export async function handlePayCardPackages(ctx) {
+    try {
+        await safeAnswerCbQuery(ctx);
+        
+        const packageButtons = [
+            [{ text: '🎬 500₽', callback_data: 'pay_card_pack_10' }],
+            [{ text: '📦 2250₽', callback_data: 'pay_card_pack_50' }],
+            [{ text: '🎁 4250₽', callback_data: 'pay_card_pack_100' }],
+            [{ text: '💎 20 000₽', callback_data: 'pay_card_pack_500' }],
+            [{ text: '🔙 Назад к способам оплаты', callback_data: 'buy' }]
+        ];
+
+        const message = 'Выберите пакет для оплаты картой:';
+        
+        try {
+            await ctx.editMessageText(message, {
+                reply_markup: { inline_keyboard: packageButtons }
+            });
+        } catch {
+            await ctx.reply(message, {
+                reply_markup: { inline_keyboard: packageButtons }
+            });
+        }
+    } catch (err) {
+        console.error('❌ Error in handlePayCardPackages:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 }
@@ -140,35 +159,101 @@ export async function handleSelectPackage(ctx, packageKey) {
     }
 }
 
-// Обработчик оплаты картой
-export async function handlePayCard(ctx, packageKey = 'single') {
+// Обработчик оплаты картой (Lava 1-Click без ввода email)
+export async function handlePayCard(ctx, packageKey = 'pack_10') {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
+        const pkg = PACKAGES[packageKey] || PACKAGES['pack_10'];
+        if (!pkg) {
+            return await safeAnswerCbQuery(ctx, 'Пакет не найден', { show_alert: true });
+        }
+        
+        const userId = ctx.from.id;
+        const email = ctx.session?.email || `user${userId}@viralapp.bot`;
+        
         ctx.session = ctx.session || {};
-        ctx.session.waitingFor = 'email';
+        delete ctx.session.waitingFor;
         ctx.session.selectedPackage = packageKey;
+        ctx.session.email = email;
         
-        const pkg = PACKAGES[packageKey];
+        // Показываем пользователю процесс генерации инвойса
+        try {
+            await ctx.editMessageText('⏳ Создаем ссылку на оплату картой...', {
+                reply_markup: { inline_keyboard: [] }
+            });
+        } catch (e) {
+            // ignore
+        }
         
-        await ctx.editMessageText(
-            MESSAGES.EMAIL_REQUEST(pkg),
-            {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '⏪ Вернуться назад', callback_data: `select_package_${packageKey}` }]
-                    ]
-                }
+        const payment = await paymentFiatService.createPayment({
+            userId,
+            email,
+            amount: pkg.rub,
+            bank: 'BANK131',
+            package: packageKey
+        });
+        
+        if (payment.error) {
+            const errText = '❌ Ошибка создания платежа: ' + payment.error;
+            const errKeyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Назад к пакетам', callback_data: `select_package_${packageKey}` }]
+                ]
+            };
+            try {
+                return await ctx.editMessageText(errText, { reply_markup: errKeyboard });
+            } catch (e) {
+                return await ctx.reply(errText, { reply_markup: errKeyboard });
             }
-        );
+        }
+        
+        const paymentUrl = payment.output?.paymentUrl || payment.output?.payUrl || payment.output?.url || (payment.output?.id ? `https://lava.top/invoice/${payment.output.id}` : null);
+        
+        // Динамический пересчет рублей в доллары по ЦБ РФ и расчет количества генераций (1.30$ за видео)
+        let dynamicUsd = pkg.usdt;
+        let dynamicGenerations = pkg.generations;
+        try {
+            const conversion = await currencyService.rubToUsdFloor(pkg.rub);
+            dynamicUsd = conversion.usd;
+            dynamicGenerations = Math.floor(conversion.usd / GENERATION_COST_USDT);
+        } catch (currErr) {
+            console.warn('⚠️ Currency conversion fallback:', currErr.message);
+        }
+
+        const message = MESSAGES.PAYMENT_CARD_CONFIRM(pkg, dynamicUsd, dynamicGenerations);
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '💳 Оплатить картой', url: paymentUrl }],
+                [{ text: '❓ Обратная связь', url: 'https://t.me/aiviral_main' }],
+                [{ text: '🔙 Назад к пакетам', callback_data: 'pay_card_packages' }]
+            ]
+        };
+        
+        try {
+            await ctx.editMessageText(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        }
     } catch (err) {
         console.error('❌ Error in handlePayCard:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 }
 
-// Обработчик оплаты криптой
-export async function handlePayCrypto(ctx, packageKey = 'single') {
+// Обработчик оплаты картой в 1 клик (без ручного ввода email)
+export async function handlePayCardOneClick(ctx, packageKey = 'pack_10') {
+    return await handlePayCard(ctx, packageKey);
+}
+
+// Обработчик оплаты криптой (выбор криптовалюты в 1 шаг)
+export async function handlePayCrypto(ctx, packageKey = 'deposit') {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
@@ -176,20 +261,43 @@ export async function handlePayCrypto(ctx, packageKey = 'single') {
         ctx.session.selectedPackage = packageKey;
         
         const pkg = PACKAGES[packageKey];
+        const userId = ctx.from?.id;
+        const walletBalance = userId ? await userService.getUserWalletBalance(userId) : 0;
+        const balanceFormatted = Number(walletBalance || 0).toFixed(2);
         
-        await ctx.editMessageText(
-            MESSAGES.PAYMENT_CRYPTO_SELECT(pkg),
-            { 
+        const titleText = pkg ? `🎬 <b>${pkg.title}</b> (${pkg.usdt} USDT)\n` : `💎 <b>Пополнение баланса криптовалютой</b>\n`;
+        const message = `${titleText}\n` +
+            `💰 <b>Свободный депозит:</b> от 2.00 USDT до 10 000.00 USDT\n` +
+            `🎬 <b>Стоимость генерации:</b> ${GENERATION_COST_USDT.toFixed(2)}$\n` +
+            `💵 <b>Баланс кошелька:</b> ${balanceFormatted} USDT\n\n` +
+            `Выберите сеть для оплаты в 1 шаг:`;
+        
+        const backTarget = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'buy';
+        
+        // 4 кнопки сетей сразу в 1 шаг согласно спецификации TASK-02-03
+        const cryptoButtons = [
+            [{ text: '💎 TON (Gram)', callback_data: `chain_TON_TON_${packageKey}` }],
+            [{ text: '⚡ USDT (BEP20)', callback_data: `chain_USDT_USDT_(BEP20)_${packageKey}` }],
+            [{ text: '🟣 USDT (SOL)', callback_data: `chain_USDT_USDT_(SOL)_${packageKey}` }],
+            [{ text: '🟡 BNB (BEP20)', callback_data: `chain_BNB_BNB_(BEP20)_${packageKey}` }],
+            [{ text: '🔙 Назад', callback_data: backTarget }]
+        ];
+        
+        try {
+            await ctx.editMessageText(message, { 
+                parse_mode: 'HTML',
                 reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '💵 USDT', callback_data: `crypto_USDT_${packageKey}` }],
-                        [{ text: '💰 USDC', callback_data: `crypto_USDC_${packageKey}` }],
-                        [{ text: '💎 TON', callback_data: `crypto_TON_${packageKey}` }],
-                        [{ text: '🔙 Назад', callback_data: `select_package_${packageKey}` }]
-                    ]
+                    inline_keyboard: cryptoButtons
                 }
-            }
-        );
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: cryptoButtons
+                }
+            });
+        }
     } catch (err) {
         console.error('❌ Error in handlePayCrypto:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
@@ -248,8 +356,8 @@ export async function handleCryptoSelect(ctx, crypto, packageKey = 'single') {
     }
 }
 
-// Обработчик выбора сети
-export async function handleChainSelect(ctx, crypto, chain, packageKey = 'single') {
+// Обработчик выбора сети (0xProcessing)
+export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposit') {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
@@ -261,129 +369,200 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'single
         const userId = ctx.from.id;
         const payCurrency = chain.replace(/_/g, ' ');
         const pkg = PACKAGES[packageKey];
+        let targetAmount = pkg ? pkg.usdt : 2.00;
+        if (!pkg && payCurrency.includes('BNB')) {
+            targetAmount = 4.00;
+        }
         
         console.log('💰 Payment params prepared:');
         console.log(`  - userId: ${userId}`);
-        console.log(`  - payCurrency BEFORE: "${chain}"`);
-        console.log(`  - payCurrency AFTER: "${payCurrency}"`);
-        console.log(`  - amount: ${pkg.usdt} USDT`);
+        console.log(`  - payCurrency: "${payCurrency}"`);
+        console.log(`  - amount: ${targetAmount} USDT`);
         console.log(`  - package: ${packageKey}`);
-        console.log(`  - generations: ${pkg.generations}`);
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         
         console.log('🚀 Calling paymentCryptoService.createPayment...');
         const payment = await paymentCryptoService.createPayment({
             userId,
-            amount: pkg.usdt,
+            amount: targetAmount,
             payCurrency,
             package: packageKey
         });
         
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('📥 Payment service response received');
-        console.log(`Response type: ${typeof payment}`);
-        console.log(`Has error: ${!!payment.error}`);
-        
         if (payment.error) {
             console.error('❌ Payment creation failed with error:', payment.error);
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return await safeAnswerCbQuery(ctx, payment.error, { show_alert: true });
         }
         
-        console.log('✅ Payment created successfully!');
-        console.log(`Order ID: ${payment.orderId}`);
-        console.log('📦 Payment output:', JSON.stringify(payment.output, null, 2));
-        
-        // Извлекаем данные для оплаты
         const address = payment.output?.address || payment.output?.Address || payment.output?.wallet;
-        const amount = payment.cryptoAmount || payment.input?.amount || pkg.usdt;
         const destinationTag = payment.output?.destinationTag || payment.output?.DestinationTag || payment.output?.memo;
         const qrCode = payment.output?.qrCode;
-        
-        console.log('✅ Extracted payment data:', { 
-            orderId: payment.orderId, 
-            address, 
-            amount, 
-            cryptoAmount: payment.cryptoAmount,
-            destinationTag,
-            currency: payment.currency,
-            hasQR: !!qrCode
-        });
-        
-        // Получаем ссылку на страницу оплаты
         const paymentUrl = payment.output?.paymentUrl || null;
         
-        // Формируем сообщение
-        let message = `${pkg.emoji} ${pkg.title}\n\n`;
-        message += `💰 Сумма: <code>${amount}</code> ${payCurrency}\n`;
-        message += `💵 Стоимость: $${pkg.usdt}\n\n`;
+        if (!address) {
+            return await safeAnswerCbQuery(ctx, 'Не удалось получить адрес кошелька. Попробуйте другую сеть.', { show_alert: true });
+        }
         
-        // Если есть адрес, показываем его
-        if (address) {
-            message += `📍 Адрес для оплаты:\n<code>${address}</code>\n\n`;
+        let effectiveRate = payment.output?.rate ? parseFloat(payment.output.rate) : null;
+        const isBnb = payCurrency.includes('BNB');
+        const isGram = payCurrency.includes('TON') || payCurrency.includes('Gram');
+
+        if (!effectiveRate || effectiveRate <= 0) {
+            if (isGram) {
+                effectiveRate = await currencyService.getCryptoRate('GRAMUSDT');
+            } else if (isBnb) {
+                effectiveRate = await currencyService.getCryptoRate('BNBUSDT');
+            }
+        }
+
+        let minNote = '2.00 USDT';
+        let dynamicMinGram = '1.25';
+        let dynamicMinBnb = '0.0055';
+
+        if (isBnb) {
+            dynamicMinBnb = effectiveRate && effectiveRate > 0 ? (4.00 / effectiveRate).toFixed(4) : '0.0055';
+            minNote = `4.00 USDT (~${dynamicMinBnb} BNB)`;
+        } else if (isGram) {
+            dynamicMinGram = effectiveRate && effectiveRate > 0 ? (2.00 / effectiveRate).toFixed(2) : '1.25';
+            minNote = `2.00 USDT (~${dynamicMinGram} Gram)`;
+        }
+
+        // Формируем экран пополнения: адрес в <code>, динамические безопасные лимиты
+        let message = '';
+        if (isGram) {
+            message = `💎 <b>Пополнение баланса Gram (prev. Toncoin)</b>\n\n`;
+            message += `🌐 <b>Сеть:</b> <code>TON (The Open Network)</code>\n`;
+            message += `💵 <b>Монета к отправке:</b> <b>Gram (TON)</b>\n`;
+            
+            if (pkg) {
+                const pkgGrams = effectiveRate && effectiveRate > 0 ? (pkg.usdt / effectiveRate).toFixed(2) : null;
+                const pkgGramStr = pkgGrams ? ` (~${pkgGrams} Gram)` : '';
+                message += `🎬 <b>Пакет:</b> ${pkg.title} (${pkg.usdt} USDT)\n`;
+                message += `💰 <b>Сумма к оплате:</b> <b>${pkg.usdt} USDT</b>${pkgGramStr}\n\n`;
+            } else {
+                message += `💰 <b>Лимиты:</b> от ~${dynamicMinGram} Gram (2.00 USDT) до 10 000.00 USDT\n\n`;
+            }
+
+            message += `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n`;
             
             if (destinationTag) {
-                message += `🏷️ Memo/Tag: <code>${destinationTag}</code>\n⚠️ ТЕГ ОБЯЗАТЕЛЕН!\n\n`;
+                message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
             }
             
-            message += `💡 Нажмите на адрес, чтобы скопировать\n\n`;
-            message += `⏰ У вас есть 30 минут для оплаты\n`;
-            message += `👇 Нажмите кнопку ниже для перехода к оплате`;
+            message += `⚠️ <b>ВНИМАНИЕ:</b> Отправляйте <b>ТОЛЬКО нативный Gram (TON)</b>!\n`;
+            message += `<i>Платежи в USDT Jetton на этот адрес не зачисляются процессингом.</i>\n\n`;
+            message += `💡 <i>Нажмите на адрес выше, чтобы скопировать</i>\n`;
+            message += `⏰ Реквизиты активны 30 минут.\n`;
+            message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
         } else {
-            // Если адреса нет, показываем только ссылку
-            message += `⏰ У вас есть 30 минут для оплаты\n\n`;
-            message += `👇 Нажмите кнопку ниже для перехода к странице оплаты\n`;
-            message += `На странице вы увидите адрес кошелька и QR-код`;
-        }
-        
-        const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey);
-        
-        // Если есть QR-код, отправляем его как фото
-        if (qrCode && address) {
-            try {
-                console.log('📸 Sending QR code...');
-                
-                // Удаляем сообщение с выбором
-                await ctx.deleteMessage().catch(() => {});
-                
-                // Отправляем QR-код
-                await ctx.replyWithPhoto(
-                    { source: Buffer.from(qrCode.replace(/^data:image\/\w+;base64,/, ''), 'base64') },
-                    {
-                        caption: message,
-                        parse_mode: 'HTML',
-                        reply_markup: keyboard
-                    }
-                );
-                
-                console.log('✅ QR code sent successfully');
-                console.log('⏱️ Response time:', Date.now() - ctx.callbackQuery.message.date * 1000, 'ms');
-                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                return; // Важно! Выходим чтобы не пытаться редактировать удаленное сообщение
-            } catch (qrErr) {
-                console.error('⚠️ Failed to send QR code:', qrErr.message);
-                // Если не удалось отправить QR, пробуем отправить просто текст
-                try {
-                    await ctx.reply(message, {
-                        parse_mode: 'HTML',
-                        reply_markup: keyboard
-                    });
-                    return;
-                } catch (replyErr) {
-                    console.error('⚠️ Failed to send reply:', replyErr.message);
-                }
+            message = `💎 <b>Пополнение баланса криптовалютой (0xProcessing)</b>\n\n`;
+            message += `🌐 <b>Сеть:</b> <code>${payCurrency}</code>\n`;
+            
+            if (pkg) {
+                message += `🎬 <b>Пакет:</b> ${pkg.title} (${pkg.usdt} USDT)\n`;
+                message += `💰 <b>Сумма к оплате:</b> <b>${pkg.usdt} USDT</b>\n\n`;
+            } else {
+                message += `💵 <b>Лимиты:</b>\n`;
+                message += `├─ <b>Min:</b> ${minNote}\n`;
+                message += `└─ <b>Max:</b> 10000.00 USDT\n\n`;
             }
+
+            message += `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n`;
+            
+            if (destinationTag) {
+                message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
+            }
+            
+            message += `⚠️ <b>ВНИМАНИЕ: Минимальная сумма пополнения — ${minNote}.</b>\n`;
+            message += `<i>Платежи меньше минимальной суммы не зачисляются блокчейном!</i>\n\n`;
+            message += `💡 <i>Нажмите на адрес выше, чтобы скопировать</i>\n`;
+            message += `⏰ Реквизиты активны 30 минут.\n`;
+            message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
         }
         
-        // Без QR-кода или если не удалось отправить - редактируем сообщение
-        await ctx.editMessageText(message, {
-            parse_mode: 'HTML',
-            reply_markup: keyboard
-        });
+        const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey, address, paymentUrl);
+        
+        try {
+            await ctx.editMessageText(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        }
     } catch (err) {
         console.error('❌ Error in handleChainSelect:', err);
-        console.error('Stack:', err.stack);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+}
+
+// Показ QR-кода по отдельной кнопке пользователя (TASK-20)
+export async function handleShowQrCode(ctx, orderId) {
+    try {
+        await safeAnswerCbQuery(ctx, 'Генерируем QR-код...');
+        const order = await orderService.getOrderById(orderId);
+        if (!order) {
+            return await ctx.reply('❌ Заказ не найден');
+        }
+
+        const address = order.output?.address || order.output?.Address || order.output?.wallet;
+        const qrCode = order.output?.qrCode;
+        const payCurrency = order.currency || order.input?.currency || 'USDT';
+        let effectiveRate = order.output?.rate ? parseFloat(order.output.rate) : null;
+        const isBnb = payCurrency.includes('BNB');
+        const isGram = payCurrency.includes('TON') || payCurrency.includes('Gram');
+
+        if (!effectiveRate || effectiveRate <= 0) {
+            if (isGram) {
+                effectiveRate = await currencyService.getCryptoRate('GRAMUSDT');
+            } else if (isBnb) {
+                effectiveRate = await currencyService.getCryptoRate('BNBUSDT');
+            }
+        }
+
+        let minNote = '2.00 USDT';
+        if (isBnb) {
+            const bnbMin = effectiveRate && effectiveRate > 0 ? (4.00 / effectiveRate).toFixed(4) : '0.0055';
+            minNote = `4.00 USDT (~${bnbMin} BNB)`;
+        } else if (isGram) {
+            const gramMin = effectiveRate && effectiveRate > 0 ? (2.00 / effectiveRate).toFixed(2) : '1.25';
+            minNote = `2.00 USDT (~${gramMin} Gram)`;
+        }
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '✅ Проверить оплату', callback_data: `check_payment_${orderId}` }],
+                [{ text: '🔙 Назад к способам оплаты', callback_data: 'buy' }]
+            ]
+        };
+
+        const caption = `📱 <b>QR-код для оплаты (${payCurrency})</b>\n\n` +
+            `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n` +
+            (order.output?.destinationTag ? `🏷️ <b>Memo/Tag:</b> <code>${order.output.destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b>\n\n` : '') +
+            `⚠️ <b>Минимальная сумма:</b> ${minNote}\n\n` +
+            `👇 После отправки транзакции нажмите кнопку «Проверить оплату»`;
+
+        if (qrCode) {
+            await ctx.replyWithPhoto(
+                { source: Buffer.from(qrCode.replace(/^data:image\/\w+;base64,/, ''), 'base64') },
+                {
+                    caption,
+                    parse_mode: 'HTML',
+                    reply_markup: keyboard
+                }
+            );
+        } else {
+            await ctx.reply(caption, {
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+        }
+    } catch (err) {
+        console.error('❌ Error in handleShowQrCode:', err);
+        await safeAnswerCbQuery(ctx, 'Не удалось отобразить QR-код');
     }
 }
 
@@ -403,6 +582,32 @@ export async function handleCheckPayment(ctx, orderId) {
             console.log(`✅ Order already paid: ${orderId}`);
             return await safeAnswerCbQuery(ctx, 'Этот заказ уже оплачен!', { show_alert: true });
         }
+
+        // Проверяем срок действия заявки (30 минут)
+        const rawDate = order.createdAt || order.input?.createdAt;
+        const orderTime = rawDate ? new Date(rawDate).getTime() : 0;
+        const expTime = order.output?.expDate ? new Date(order.output.expDate).getTime() : 0;
+        const isExpired = (
+            (expTime > 0 && Date.now() > expTime) ||
+            (orderTime > 0 && Date.now() - orderTime > 30 * 60 * 1000)
+        );
+        if (isExpired) {
+            console.log(`⌛ Order expired: ${orderId}`);
+            return await ctx.reply(
+                '⏳ <b>Срок действия заявки истёк</b>\n\n' +
+                'Время на оплату (30 минут) завершилось. Если средства не отправлялись, создайте новую заявку.\n\n' +
+                '💡 Если транзакция уже отправлена в блокчейн, дождитесь подтверждения сетью.',
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '💳 Пополнить баланс', callback_data: 'buy' }],
+                            [{ text: '👤 Личный кабинет', callback_data: 'profile' }]
+                        ]
+                    }
+                }
+            );
+        }
         
         // Показываем что проверяем
         await safeAnswerCbQuery(ctx, '⏳ Проверяем транзакцию...');
@@ -419,28 +624,45 @@ export async function handleCheckPayment(ctx, orderId) {
         
         if (result.status === 'paid') {
             console.log(`✅ Payment confirmed for order: ${orderId}`);
+
+            if (order.isPaid) {
+                console.log(`⚠️ Order ${orderId} already processed as paid.`);
+                return await ctx.reply('✅ Этот платеж уже успешно зачислен на ваш баланс!');
+            }
             
+            // Зачисляем фактически поступившую сумму 1 к 1 на баланс USDT (TASK-02-03)
+            const depositAmount = Number(result.amount || order.amount || 2.0);
+
             // Отмечаем заказ как оплаченный
-            await orderService.markAsPaid(orderId);
+            await orderService.markAsPaid(orderId, {
+                paidAmount: depositAmount,
+                status: 'paid'
+            });
             
-            // Добавляем генерации
+            // Если выбран фиксированный пакет - начисляем генерации
             const pkg = PACKAGES[order.package];
-            await userService.addPaidQuota(order.userId, pkg.generations);
+            if (pkg) {
+                await userService.addPaidQuota(order.userId, pkg.generations);
+            }
+            
+            await userService.addWalletBalance(order.userId, depositAmount);
             
             // Обрабатываем кешбэк
             try {
-                await referralService.processExpertCashback(order.userId, order.amount);
+                await referralService.processExpertCashback(order.userId, depositAmount);
             } catch (cashbackErr) {
                 console.error('⚠️ Cashback error:', cashbackErr.message);
             }
             
             // Уведомляем пользователя
+            const successText = pkg
+                ? `✅ <b>Оплата подтверждена!</b>\n\n${pkg.emoji} ${pkg.title}\n💎 Добавлено генераций: ${pkg.generations}\n\nТеперь вы можете создавать видео!`
+                : `✅ <b>Депозит успешно зачислен!</b>\n\n💰 На ваш баланс зачислено: <b>${depositAmount.toFixed(2)} USDT</b>\n\nТеперь вы можете создавать видео!`;
+            
             await ctx.reply(
-                `✅ Оплата подтверждена!\n\n` +
-                `${pkg.emoji} ${pkg.title}\n` +
-                `💎 Добавлено генераций: ${pkg.generations}\n\n` +
-                `Теперь вы можете создавать видео!`,
+                successText,
                 {
+                    parse_mode: 'HTML',
                     reply_markup: {
                         inline_keyboard: [
                             [{ text: '🎬 Создать видео', callback_data: 'catalog' }],
@@ -468,14 +690,20 @@ export async function handleCheckPayment(ctx, orderId) {
 export async function handlePaymentSuccess(bot, orderId) {
     try {
         const order = await orderService.getOrderById(orderId);
-        if (!order) return;
+        if (!order || order.isPaid) return;
         
         // Отмечаем заказ как оплаченный
         await orderService.markAsPaid(orderId);
         
-        // Добавляем генерации пользователю
+        // Добавляем генерации пользователю если фиксированный пакет
         const pkg = PACKAGES[order.package];
-        await userService.addPaidQuota(order.userId, pkg.generations);
+        if (pkg) {
+            await userService.addPaidQuota(order.userId, pkg.generations);
+        }
+        
+        // Зачисляем сумму 1 к 1 на баланс USDT (TASK-02-03)
+        const depositAmount = Number(order.amount || 0.50);
+        await userService.addWalletBalance(order.userId, depositAmount);
         
         // Обрабатываем реферальный кешбэк для эксперта
         const cashbackResult = await referralService.processExpertCashback(order.userId, order.amount);
@@ -534,50 +762,37 @@ export async function handleReferral(ctx) {
         const botName = process.env.BOT_NAME || 'viralapp_official_bot';
         const stats = await referralService.getReferralStats(userId);
         
-        // Проверяем, является ли пользователь экспертом
-        const isExpert = user?.isExpert || false;
+        const refLink = `https://t.me/${botName}?start=expert_${userId}`;
         
-        if (isExpert) {
-            // Для экспертов
-            const refLink = `https://t.me/${botName}?start=expert_${userId}`;
-            
-            let message = MESSAGES.EXPERT_REFERRAL_INFO(stats);
-            message += `\n<code>${refLink}</code>\n\n`;
-            message += `📊 Статистика:\n`;
-            message += `👥 Приглашено: ${stats.expertReferrals || 0}\n`;
-            message += `💰 Заработано: ${(stats.totalCashback || 0).toFixed(2)}₽`;
-            
-            await ctx.editMessageText(
-                message,
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '📥 Пригласить друга', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}` }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    },
-                    parse_mode: 'HTML'
-                }
-            );
-        } else {
-            // Для обычных пользователей
-            const refLink = `https://t.me/${botName}?start=ref_${userId}`;
-            
-            let message = MESSAGES.REFERRAL_INFO;
-            message += `\n<code>${refLink}</code>`;
-            
-            await ctx.editMessageText(
-                message,
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '📥 Пригласить друга', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}` }],
-                            [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
-                        ]
-                    },
-                    parse_mode: 'HTML'
-                }
-            );
+        let message = `💼 <b>Реферальная программа</b>\n\n`;
+        message += `Получай <b>25%</b> с 1-й линии и <b>10%</b> со 2-й линии с каждой оплаты приглашённых пользователей!\n\n`;
+        message += `🔗 Твоя персональная ссылка:\n<code>${refLink}</code>\n\n`;
+        message += `📊 <b>Статистика:</b>\n`;
+        message += `👥 Приглашено: ${stats?.expertReferrals || stats?.referredUsers || 0}\n`;
+        const rawCashback = user?.totalCashback ?? stats?.totalCashback ?? user?.affiliate_earnings ?? 0;
+        message += `💰 Заработано: ${Number(rawCashback || 0).toFixed(2)} USDT`;
+        
+        const inviteText = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик: ${refLink}`;
+        const shareUrl = `https://t.me/share/url?text=${encodeURIComponent(inviteText)}`;
+        
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '📥 Пригласить друга', url: shareUrl }],
+                [{ text: '🔙 В личный кабинет', callback_data: 'profile' }],
+                [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+            ]
+        };
+
+        try {
+            await ctx.editMessageText(message, {
+                reply_markup: keyboard,
+                parse_mode: 'HTML'
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                reply_markup: keyboard,
+                parse_mode: 'HTML'
+            });
         }
     } catch (err) {
         console.error('❌ Error in handleReferral:', err);
@@ -632,7 +847,8 @@ export async function handleProfile(ctx) {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
-        const userId = ctx.from.id;
+        const userId = ctx.from?.id;
+        if (!userId) return;
         const user = await userService.getUser(userId);
         const generations = await generationService.getUserGenerations(userId);
         const referralStats = await referralService.getReferralStats(userId);
@@ -642,16 +858,17 @@ export async function handleProfile(ctx) {
         }
         
         const message = MESSAGES.PROFILE(user, generations, referralStats);
+        const keyboard = createProfileKeyboard(user, referralStats);
         
-        await ctx.editMessageText(message, {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '📃 История генераций', callback_data: 'profile_history' }],
-                    [{ text: '💳 Купить видео', callback_data: 'buy' }],
-                    [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
-                ]
-            }
-        });
+        try {
+            await ctx.editMessageText(message, {
+                reply_markup: keyboard
+            });
+        } catch (editErr) {
+            await ctx.reply(message, {
+                reply_markup: keyboard
+            });
+        }
     } catch (err) {
         console.error('❌ Error in handleProfile:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
@@ -735,3 +952,127 @@ export async function handleProfileHistory(ctx) {
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
     }
 }
+
+// Обработчик истории транзакций пользователя (TASK-20)
+export async function handleProfileTransactions(ctx) {
+    try {
+        await safeAnswerCbQuery(ctx);
+        const userId = ctx.from.id;
+        const allOrders = await orderService.getUserOrders(userId);
+
+        if (!allOrders || allOrders.length === 0) {
+            const emptyText = '💳 <b>История транзакций</b>\n\n' +
+                'У вас пока нет транзакций или платежей.\n\n' +
+                '💡 Чтобы пополнить баланс, выберите пакет в меню «Пополнить баланс».';
+
+            const emptyKeyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Пополнить баланс', callback_data: 'buy' }],
+                    [{ text: '🔙 Назад в профиль', callback_data: 'profile' }],
+                    [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+                ]
+            };
+
+            return await ctx.editMessageText(emptyText, {
+                parse_mode: 'HTML',
+                reply_markup: emptyKeyboard
+            });
+        }
+
+        // Сортировка от новых к старым (с поддержкой ord.createdAt и ord.input?.createdAt)
+        allOrders.sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.input?.createdAt || a.paidAt || 0);
+            const dateB = new Date(b.createdAt || b.input?.createdAt || b.paidAt || 0);
+            return dateB - dateA;
+        });
+
+        const page = parseInt(ctx.match?.[1]) || 0;
+        const perPage = 5;
+        const totalPages = Math.max(1, Math.ceil(allOrders.length / perPage));
+
+        const startIdx = page * perPage;
+        const endIdx = startIdx + perPage;
+        const orders = allOrders.slice(startIdx, endIdx);
+
+        let message = `💳 <b>История транзакций</b> (${allOrders.length} всего)\n`;
+        message += `📄 Страница ${page + 1} из ${totalPages}\n\n`;
+
+        orders.forEach((ord, idx) => {
+            const isPaid = Boolean(ord.isPaid);
+            const isCanceled = ord.status === 'canceled' || ord.status === 'cancelled' || ord.output?.status === 'canceled' || ord.output?.status === 'cancelled';
+            const rawDate = ord.createdAt || ord.input?.createdAt || ord.paidAt;
+            const orderTime = rawDate ? new Date(rawDate).getTime() : 0;
+            const expTime = ord.output?.expDate ? new Date(ord.output.expDate).getTime() : 0;
+            const isExpired = !isPaid && !isCanceled && (
+                (expTime > 0 && Date.now() > expTime) ||
+                (orderTime > 0 && Date.now() - orderTime > 30 * 60 * 1000)
+            );
+
+            const statusEmoji = isPaid ? '✅' : (isCanceled ? '❌' : (isExpired ? '⌛' : '⏳'));
+            const statusText = isPaid ? 'Оплачен' : (isCanceled ? 'Отменен' : (isExpired ? 'Истёк' : 'Ожидает оплаты'));
+            const date = rawDate
+                ? new Date(rawDate).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })
+                : '—';
+            const displayAmount = ord.paidAmount || ord.input?.amountUSD || ord.amount || 0;
+            const amount = ord.isFiat ? `${ord.amount}₽` : `${Number(displayAmount).toFixed(2)} USDT`;
+            const pkgTitle = ord.package === 'deposit' ? 'Пополнение баланса' : (PACKAGES[ord.package]?.title || ord.package || 'Пополнение');
+            const globalIdx = startIdx + idx + 1;
+            const payType = ord.isFiat ? 'Банковская карта (Lava)' : `Крипта (${ord.currency || 'USDT'})`;
+
+            message += `${globalIdx}. ${statusEmoji} <b>${pkgTitle}</b> — <b>${amount}</b>\n`;
+            message += `   ├ Статус: ${statusText}\n`;
+            message += `   ├ Метод: ${payType}\n`;
+            message += `   └ 📅 ${date} (МСК)\n\n`;
+        });
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        // Пагинация
+        if (totalPages > 1) {
+            const navButtons = [];
+            if (page > 0) {
+                navButtons.push({ text: '⬅️ Назад', callback_data: `profile_transactions:${page - 1}` });
+            }
+            if (page < totalPages - 1) {
+                navButtons.push({ text: 'Вперёд ➡️', callback_data: `profile_transactions:${page + 1}` });
+            }
+            if (navButtons.length > 0) {
+                keyboard.inline_keyboard.push(navButtons);
+            }
+        }
+
+        // Кнопка быстрой проверки только для АКТИВНЫХ (не истекших, в пределах 30 минут) крипто-заказов
+        const pendingCrypto = allOrders.find(o => {
+            if (o.isPaid || o.isFiat || !o.orderId) return false;
+            if (o.status === 'canceled' || o.status === 'cancelled' || o.output?.status === 'canceled' || o.output?.status === 'cancelled') return false;
+            const rawDate = o.createdAt || o.input?.createdAt;
+            const orderTime = rawDate ? new Date(rawDate).getTime() : 0;
+            const expTime = o.output?.expDate ? new Date(o.output.expDate).getTime() : 0;
+            if (expTime > 0 && Date.now() > expTime) return false;
+            if (orderTime > 0 && Date.now() - orderTime > 30 * 60 * 1000) return false;
+            return true;
+        });
+        if (pendingCrypto) {
+            keyboard.inline_keyboard.push([{
+                text: '🔄 Проверить статус крипто-оплаты',
+                callback_data: `check_payment_${pendingCrypto.orderId}`
+            }]);
+        }
+
+        keyboard.inline_keyboard.push([{ text: '🔙 Назад в профиль', callback_data: 'profile' }]);
+        keyboard.inline_keyboard.push([{ text: '🏠 Главное меню', callback_data: 'main_menu' }]);
+
+        await ctx.editMessageText(message, {
+            parse_mode: 'HTML',
+            reply_markup: keyboard
+        });
+    } catch (err) {
+        console.error('❌ Error in handleProfileTransactions:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+}
+
+export { handleWithdraw } from '../handlers/user_handlers/user_menu.js';
+

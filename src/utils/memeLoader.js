@@ -20,7 +20,14 @@ export function loadAllMemes() {
             console.error(`Error loading meme ${file}:`, err.message);
         }
     }
-    
+
+    const orderMap = { cheburashka: 1, 228: 2, mama_taxi: 3 };
+    memes.sort((a, b) => {
+        const orderA = a.order || orderMap[a.id] || 99;
+        const orderB = b.order || orderMap[b.id] || 99;
+        return orderA - orderB;
+    });
+
     return memes;
 }
 

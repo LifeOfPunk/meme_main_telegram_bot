@@ -1,4 +1,4 @@
-import { PACKAGES } from './src/config.js';
+import { PACKAGES } from '../src/config.js';
 
 console.log('🧪 Testing configuration and basic logic\n');
 

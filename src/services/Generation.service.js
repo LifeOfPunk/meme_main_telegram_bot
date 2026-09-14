@@ -21,7 +21,7 @@ export class GenerationService {
         this.apiKey = process.env.KIE_AI_API_KEY;
         // Video generation API endpoint
         this.apiUrl = `https://api.kie.ai/api/v1/jobs`;
-        this.modelName = process.env.KIE_MODEL || 'grok-imagine/text-to-video';
+        this.modelName = process.env.KIE_MODEL || 'google/gemini-omni-flash-1-1';
         this.bot = bot; // Telegram bot instance для отправки уведомлений
         this.userService = new UserService(); // Сервис для работы с квотами
         this.youtubeService = new YouTubeService(); // Сервис для загрузки на YouTube
@@ -69,7 +69,7 @@ export class GenerationService {
     }
 
     // Создание генерации
-    async createGeneration({ userId, memeId, name, gender, customPrompt = null, chatId = null }) {
+    async createGeneration({ userId, memeId, name, gender, customPrompt = null, chatId = null, deductedType = null }) {
         try {
             const generationId = this.generateId();
             let prompt;
@@ -117,6 +117,7 @@ export class GenerationService {
                 name,
                 gender,
                 prompt,
+                deductedType: deductedType || null,
                 status: 'queued',
                 videoUrl: null,
                 error: null,
@@ -198,7 +199,7 @@ export class GenerationService {
             await this.updateGeneration(generationId, { status: 'processing' });
 
             // Вызов API для генерации видео
-            const videoUrl = await this.generateVideo(generation.prompt);
+            const videoUrl = await this.generateVideo(generation.prompt, generation.deductedType);
 
             if (videoUrl) {
                 // const { localPath } = await this.watermarkAndSave(videoUrl, generationId);
@@ -278,6 +279,16 @@ export class GenerationService {
                             failed_generations: (user.failed_generations || 0) + 1
                         });
                     }
+                    
+                    // Возвращаем списанную квоту/средства при сбое генерации
+                    if (generation.deductedType) {
+                        try {
+                            await this.userService.refundGenerationCost(generation.userId, generation.deductedType);
+                            console.log(`↩️ Refunded ${generation.deductedType} quota to user ${generation.userId} due to generation error`);
+                        } catch (refundErr) {
+                            console.error(`⚠️ Failed to refund ${generation.deductedType} to user ${generation.userId}: ${refundErr.message}`);
+                        }
+                    }
                 }
                 
                 // Отправляем уведомление об ошибке
@@ -291,29 +302,92 @@ export class GenerationService {
         }
     }
 
-    // Генерация видео через API
-    async generateVideo(prompt) {
+    // Определение языка (Приоритет 1: явная команда в тексте, Приоритет 2: анализ алфавита)
+    detectLanguage(text) {
+        if (!text) return 'Russian';
+        const str = String(text);
+
+        // Приоритет 1: Явные указания пользователя в тексте
+        if (/на\s+английском|по-английски|по\s+английски|английский\s+язык|in\s+english|english\s+language|english\s+audio/i.test(str)) {
+            return 'English';
+        }
+        if (/на\s+русском|по-русски|по\s+русски|русский\s+язык|in\s+russian|russian\s+language|russian\s+audio/i.test(str)) {
+            return 'Russian';
+        }
+        if (/на\s+испанском|по-испански|in\s+spanish|spanish\s+language/i.test(str)) {
+            return 'Spanish';
+        }
+
+        // Приоритет 2: Анализ преобладающего алфавита
+        const cyrillicCount = (str.match(/[\u0400-\u04FF]/g) || []).length;
+        const latinCount = (str.match(/[a-zA-Z]/g) || []).length;
+
+        if (cyrillicCount > 0 && cyrillicCount >= latinCount) {
+            return 'Russian';
+        }
+        if (latinCount > cyrillicCount) {
+            return 'English';
+        }
+
+        return cyrillicCount > 0 ? 'Russian' : 'English';
+    }
+
+    // Формирование промпта с динамической речевой директивой для видеомодели
+    formatPromptWithLanguage(prompt) {
+        if (!prompt) return '';
+
+        // Если это объект (каталожный мем)
+        if (typeof prompt === 'object' && prompt !== null) {
+            const promptCopy = JSON.parse(JSON.stringify(prompt));
+            const serialized = JSON.stringify(promptCopy);
+            const lang = this.detectLanguage(serialized);
+
+            promptCopy.language = lang;
+            if (lang === 'Russian') {
+                promptCopy.audio_directive = 'All spoken dialogue, singing, and character voices must be in Russian language (Русский язык).';
+                promptCopy.notes = (promptCopy.notes ? promptCopy.notes + ' ' : '') + 'All speech and dialogue must be voiced strictly in Russian.';
+            } else {
+                promptCopy.audio_directive = `All spoken dialogue and character voices must be in ${lang}.`;
+                promptCopy.notes = (promptCopy.notes ? promptCopy.notes + ' ' : '') + `All speech and dialogue must be voiced in ${lang}.`;
+            }
+
+            return JSON.stringify(promptCopy);
+        }
+
+        // Если это строка (кастомный промпт пользователя)
+        const str = String(prompt).trim();
+        const lang = this.detectLanguage(str);
+
+        if (lang === 'Russian') {
+            return `Video scene:\n${str}\n\nAudio track directives:\n- Audio language: Russian (Русский язык)\n- All spoken dialogue, character voices, and vocal reactions must be in Russian language only`;
+        } else if (lang === 'Spanish') {
+            return `Video scene:\n${str}\n\nAudio track directives:\n- Audio language: Spanish (Español)\n- All spoken dialogue, character voices, and vocal reactions must be in Spanish language only`;
+        } else {
+            return `Video scene:\n${str}\n\nAudio track directives:\n- Audio language: English\n- All spoken dialogue, character voices, and vocal reactions must be in English language only`;
+        }
+    }
+
+    // Генерация видео через API (TASK-15 / dynamic model routing)
+    async generateVideo(prompt, deductedType = null) {
         try {
             if (!this.apiKey) {
                 throw new Error('API key not configured');
             }
 
-            console.log('🎬 Starting video generation...');
+            const isPaid = (deductedType === 'paid' || deductedType === 'balance');
+            const targetModel = isPaid
+                ? (process.env.KIE_PAID_MODEL || 'google/gemini-omni-flash-1-1')
+                : (process.env.KIE_FREE_MODEL || 'grok-imagine/text-to-video');
+
+            console.log(`🎬 Starting video generation | Quota type: ${deductedType || 'free'} | Model: ${targetModel} | isPaid: ${isPaid}`);
             
-            // Определяем, является ли prompt объектом или строкой
-            let promptData;
-            if (typeof prompt === 'object') {
-                // Если это объект, преобразуем в JSON строку для API
-                promptData = JSON.stringify(prompt);
-                console.log('Prompt (JSON):', promptData);
-            } else {
-                promptData = prompt;
-                console.log('Prompt:', promptData);
-            }
+            // Автодетект языка и подготовка промпта с аудио-директивой (RU/EN для всех моделей)
+            const promptData = this.formatPromptWithLanguage(prompt);
+            console.log('Prepared Prompt for API:', promptData);
 
             // Подготовка input для Kie.ai в зависимости от модели
             let inputPayload;
-            if (this.modelName.includes('grok')) {
+            if (targetModel.includes('grok')) {
                 inputPayload = {
                     prompt: promptData,
                     aspect_ratio: '9:16',
@@ -324,9 +398,9 @@ export class GenerationService {
             } else {
                 inputPayload = {
                     prompt: promptData,
-                    aspect_ratio: 'portrait', // 9:16 формат (1080x1920)
-                    n_frames: "10", 
-                    remove_watermark: true
+                    duration: "10",
+                    resolution: "720p",
+                    aspect_ratio: "9:16"
                 };
             }
 
@@ -334,7 +408,7 @@ export class GenerationService {
             const response = await axios.post(
                 `${this.apiUrl}/createTask`,
                 {
-                    model: this.modelName,
+                    model: targetModel,
                     input: inputPayload
                 },
                 {
@@ -583,8 +657,7 @@ export class GenerationService {
                             caption: '✅ Ваше видео готово!\n\n🎬 Генерация успешно завершена!\n\n⚠️ ВАЖНО: Сохраните видео прямо сейчас!',
                             reply_markup: {
                                 inline_keyboard: [
-                                    [{ text: '👥 Поделиться с другом', switch_inline_query: data.generationId }],
-                                    [{ text: '📺 Опубликовать на YouTube', callback_data: `upload_youtube_${data.generationId}` }],
+                                    [{ text: '👥 Поделиться с другом', switch_inline_query: data.generationId || '' }],
                                     [{ text: '🎬 Сгенерировать еще', callback_data: 'create_video' }],
                                     [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
                                 ]
@@ -614,8 +687,7 @@ export class GenerationService {
                         {
                             reply_markup: {
                                 inline_keyboard: [
-                                    [{ text: '👥 Поделиться с другом', switch_inline_query: data.generationId }],
-                                    [{ text: '📺 Опубликовать на YouTube', callback_data: `upload_youtube_${data.generationId}` }],
+                                    [{ text: '👥 Поделиться с другом', switch_inline_query: data.generationId || '' }],
                                     [{ text: '🎬 Сгенерировать еще', callback_data: 'create_video' }],
                                     [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
                                 ]
@@ -629,9 +701,13 @@ export class GenerationService {
                 // Получаем генерацию для возврата квоты
                 const generation = await this.getGeneration(data.generationId);
                 if (generation && generation.userId) {
-                    // Возвращаем квоту пользователю
-                    await this.userService.refundQuota(generation.userId);
-                    console.log(`💰 Refunded quota for user ${generation.userId}`);
+                    // Возвращаем квоту или баланс пользователю
+                    if (generation.deductedType) {
+                        await this.userService.refundGenerationCost(generation.userId, generation.deductedType);
+                    } else {
+                        await this.userService.refundQuota(generation.userId, generation.mode === 'paid');
+                    }
+                    console.log(`💰 Refunded quota/balance for user ${generation.userId}`);
                 }
                 
                 // Импортируем сообщение из конфига

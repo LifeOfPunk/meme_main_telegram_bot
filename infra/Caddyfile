@@ -1,0 +1,47 @@
+n8n.aiviral.agency {
+    encode gzip
+    reverse_proxy n8n:5678
+}
+
+aiviral.agency, www.aiviral.agency {
+    encode gzip
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    handle /webhook/staging/* {
+        reverse_proxy viralapp-staging-backend:3005
+    }
+
+    handle /staging/webhook/* {
+        reverse_proxy viralapp-staging-backend:3005
+    }
+
+    handle /webhook/* {
+        reverse_proxy viralapp-staging-backend:3005
+    }
+
+    handle {
+        root * /srv/site
+        file_server
+    }
+}
+
+viral-farm.aiviral.agency {
+    encode gzip
+    reverse_proxy viral-farm-app:4000
+}
+
+viral-sender.aiviral.agency {
+    encode gzip
+    handle /api/* {
+        reverse_proxy viral-sender-backend:8787
+    }
+    handle {
+        root * /srv/viral-sender
+        try_files {path} /index.html
+        file_server
+    }
+}

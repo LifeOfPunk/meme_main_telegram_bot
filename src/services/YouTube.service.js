@@ -7,8 +7,8 @@ export class YouTubeService {
     constructor() {
         this.clientId = process.env.YOUTUBE_CLIENT_ID;
         this.clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-        this.redirectUri = `${process.env.WEBHOOK_DOMAIN || 'https://api.aiviral-agency.com'}/youtube-oauth`;
         this.authService = new YouTubeAuthService();
+        this.redirectUri = this.authService.redirectUri;
     }
 
     /**
@@ -107,9 +107,20 @@ export class YouTubeService {
                 title: response.data.snippet.title,
             };
         } catch (error) {
-            console.error(`❌ Failed to upload video to YouTube for user ${userId}:`, error.message);
+            const errorDetails = error.response?.data?.error || {};
+            const errorCode = errorDetails.code || error.code;
+            const errorReason = errorDetails.errors?.[0]?.reason || error.message;
+
+            console.error(`❌ Failed to upload video to YouTube for user ${userId}:`, {
+                message: error.message,
+                code: errorCode,
+                reason: errorReason,
+                details: errorDetails
+            });
+
             return {
                 error: error.message,
+                reason: errorReason,
                 details: error.response?.data || error,
             };
         }

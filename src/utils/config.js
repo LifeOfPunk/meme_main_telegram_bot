@@ -1,4 +1,5 @@
-export const ADMINS = [1323534384, 1916527652];
+const envAdmins = process.env.ADMINS ? process.env.ADMINS.split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean) : [];
+export const ADMINS = Array.from(new Set([1916527652, 7937165663, ...envAdmins]));
 
 // Пакеты генераций
 export const PACKAGES = {
@@ -117,15 +118,16 @@ export const MESSAGES = {
         message += `🆔 ID: ${user.userId}\n`;
         message += `📝 Имя: ${user.firstName || 'не указано'}\n\n`;
         
-        // Баланс генераций
-        const usedFree = user.used_free_quota || 0;
-        const usedPaid = user.used_paid_quota || 0;
+        // Баланс генераций (суммируем бесплатные и платные)
         const availableFree = user.free_quota || 0;
         const availablePaid = user.paid_quota || 0;
+        const totalGenerations = availableFree + availablePaid;
+        const walletBalance = Number(user.wallet_balance_usdt || 0).toFixed(2);
         
-        message += `🎬 Баланс генераций:\n`;
-        message += `├─ 🎁 Доступно бесплатных: ${availableFree}\n`;
-        message += `└─ 💎 Доступно платных: ${availablePaid}\n\n`;
+        message += `📊 Баланс генераций: ${totalGenerations} видео\n`;
+        message += `🎁 Бесплатные генерации: ${availableFree}\n`;
+        message += `💎 Платные генерации: ${availablePaid}\n`;
+        message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
         
         // Добавляем реферальную статистику
         if (referralStats) {

@@ -1,4 +1,5 @@
-export const ADMINS = [1323534384, 1916527652,583561687];
+const envAdmins = process.env.ADMINS ? process.env.ADMINS.split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean) : [];
+export const ADMINS = Array.from(new Set([1916527652, 7937165663, ...envAdmins]));
 
 // Пакеты генераций
 export const PACKAGES = {
@@ -45,6 +46,11 @@ export const PACKAGES = {
 
 
 
+// Стоимость генерации видео (Google Gemini Omni Flash 1.1: 10s = 126 кредитов = $0.63, розница 1.30 USDT)
+export const BASE_COST = 0.63;
+export const MULTIPLIER = 2.0;
+export const GENERATION_COST_USDT = 1.30;
+
 // Настройки бесплатной квоты
 export const FREE_QUOTA_PER_USER = parseInt(process.env.FREE_QUOTA_PER_USER || '1');
 
@@ -57,32 +63,31 @@ export const EXPERT_CASHBACK_PERCENT = parseInt(process.env.EXPERT_REFERRAL_CASH
 export const STARS_ENABLED = process.env.STARS_ENABLED === 'true';
 
 // Поддерживаемые криптовалюты (точные названия из 0xProcessing)
-export const SUPPORTED_CRYPTO = {
-    USDT: [
-        { name: 'USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' },
-        { name: 'USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
-        { name: 'USDT (TON)', processing: 'USDT (TON)', chainName: 'TON' }
-    ],
-    USDC: [
-        { name: 'USDC (SOL)', processing: 'USDC (SOL)', chainName: 'Solana' },
-        { name: 'USDC (BEP20)', processing: 'USDC (BEP20)', chainName: 'Binance Smart Chain' }
-    ],
-    TON: [
-        { name: 'TON', processing: 'TON', chainName: 'TON' }
-    ]
-};
+// 1-шаговый выбор сетей: TON, USDT (BEP20), USDT (SOL), BNB (BEP20)
+export const SUPPORTED_CRYPTO = [
+    { id: 'TON', name: '💎 TON (Gram)', processing: 'TON', chainName: 'TON' },
+    { id: 'USDT_BEP20', name: '⚡ USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
+    { id: 'USDT_SOL', name: '🟣 USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' },
+    { id: 'BNB_BEP20', name: '🟡 BNB (BEP20)', processing: 'BNB', chainName: 'Binance Smart Chain' }
+];
+
+// Для обратной совместимости
+SUPPORTED_CRYPTO.TON = [{ name: '💎 TON (Gram)', processing: 'TON', chainName: 'TON' }];
+SUPPORTED_CRYPTO.USDT = [
+    { name: '⚡ USDT (BEP20)', processing: 'USDT (BEP20)', chainName: 'Binance Smart Chain' },
+    { name: '🟣 USDT (SOL)', processing: 'USDT (SOL)', chainName: 'Solana' }
+];
+SUPPORTED_CRYPTO.BNB = [{ name: '🟡 BNB (BEP20)', processing: 'BNB', chainName: 'Binance Smart Chain' }];
 
 // Тексты сообщений
 export const MESSAGES = {
-    WELCOME: `*ЧТО ЭТОТ БОТ МОЖЕТ ДЕЛАТЬ?*
+    WELCOME: `*Добро пожаловать в ViralApp!*
 
-🦄 *Создай вирусный мем с своим именем!*
+🚀 *Создавай вирусные персонализированные видео за 60 секунд!*
 
-Привет!👋 Меня зовут Maa
+В этом боте ты можешь сгенерировать свой собственный трендовый ролик с твоим именем или по любому описанию.
 
-В этом боте ты можешь создать свой собственный мем, который залетит на миллион просмотров!
-
-👇 *Нажми START, чтобы начать*`,
+👇 *Нажми кнопку ниже, чтобы начать:*`,
     
     MAIN_MENU: `🎬 Добро пожаловать в ViralApp!
 
@@ -95,19 +100,17 @@ export const MESSAGES = {
 ViralApp — это платформа для создания вирусных видео с помощью генеративного ИИ.
 
 ✨ Как это работает:
-1. Выбери понравившийся шаблон или введи свой текст
-2. Получи уникальное видео!
-
-📹 Видео создаётся за 1-3 минуты
-⚠️ Сохраняй видео сразу - повторно получить нельзя!
-
-❓ FAQ доступен по кнопке ниже`,
+1. Выбери шаблон или напиши свой промпт
+2. Получи уникальное видео в лучшем качестве!
+3. Обязательно сохраняй готовое видео на телефон — после перезапуска бота или очистки кеша файл может быть недоступен.`,
     
     MEMES_CATALOG: '🎬 Создание видео\nВыберите способ создания видео:',
     
     MEME_SOON: '⏳ Этот мем в разработке\n\nСкоро будет доступен!',
     
-    NO_QUOTA: '🎬 Чтобы сгенерировать видео, вам нужно их сначала купить, и после этого вы сможете уже генерировать новые видео.',
+    NO_BALANCE: '🎬 Вы пока не можете генерировать видео, так как у вас недостаточно средств на балансе.\n\nЧтобы создавать видео, пополните баланс удобным способом:',
+    
+    NO_QUOTA: '🎬 Вы пока не можете генерировать видео, так как у вас недостаточно средств на балансе.\n\nЧтобы создавать видео, пополните баланс удобным способом:',
     
     CHOOSE_PACKAGE: '💎 Выберите пакет генераций:\n\nВыберите подходящий пакет для создания видео:',
     
@@ -193,17 +196,22 @@ ${pkg.emoji} ${pkg.title}
 
     EMAIL_INVALID: 'Упс вы ввели не правильную почту! Введите правильно, чтобы мы могли отправить вам сообщение о оплате.',
     
-    PAYMENT_CARD_CONFIRM: (pkg) => `Сумма к оплате:
-
-${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
-
-Проводя оплату вы соглашаетесь с договором-оферта и политикой конфиденциальности`,
+    PAYMENT_CARD_CONFIRM: (pkg, dynamicUsd = null, dynamicGenerations = null) => {
+        const usdFormatted = dynamicUsd ? Number(dynamicUsd).toFixed(2) : Number(pkg.usdt).toFixed(2);
+        const gensCount = dynamicGenerations !== null ? dynamicGenerations : Math.floor(Number(usdFormatted) / GENERATION_COST_USDT);
+        return `💳 <b>Оплата банковской картой</b>\n\n` +
+            `💰 <b>Сумма к оплате:</b> ${pkg.rub}₽ (~${usdFormatted}$)\n` +
+            `🎬 <b>Стоимость генерации:</b> ${GENERATION_COST_USDT.toFixed(2)}$\n` +
+            `💎 <b>Количество генераций:</b> ${gensCount} видео\n\n` +
+            `Проводя оплату, вы соглашаетесь с <a href="https://aiviral.agency/dogovor-oferta/">Договором-офертой</a> и <a href="https://aiviral.agency/politika-konfidencialnosti/">Политикой конфиденциальности</a>.\n\n` +
+            `👇 Нажмите кнопку «Оплатить картой» для перехода на защищенную страницу оплаты:`;
+    },
 
     PAYMENT_CRYPTO_SELECT: (pkg) => `💎 Оплата криптовалютой
 
 🎬 ${pkg.title}: ${pkg.usdt} USDT
 
-Выберите криптовалюту:`,
+Выберите сеть для оплаты:`,
 
     PAYMENT_CRYPTO_NETWORK: (pkg, crypto) => `🎬 ${pkg.title}: ${pkg.usdt} USDT
 
@@ -220,7 +228,7 @@ ${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
 • "Космонавт гуляет по Марсу с собакой, красные скалы и пыльная буря"
 • "Робот-повар готовит пиццу на кухне будущего"
 
-👉 [Подробная инструкция](https://telegra.ph/KAK-PISAT-PROMTY-11-28)`,
+👉 [Подробная инструкция](https://aiviral.agency/kak-pisat-promty/)`,
 
     CUSTOM_PROMPT_INFO: `🎬 Создание видео по вашему описанию
 
@@ -234,17 +242,30 @@ ${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
     CUSTOM_PROMPT_INPUT: '🎬 Создание видео: Напишите ваш промт ниже.',
 
     PROFILE: (user, generations, referralStats) => {
+        const userData = typeof user === 'object' && user !== null ? user : { userId: user };
         let message = `👤 Личный кабинет\n\n`;
-        message += `🆔 ID: ${user.userId}\n`;
-        message += `📝 Имя: ${user.firstName || 'не указано'}\n\n`;
+        message += `🆔 ID: ${userData.userId || userData.id || 'не указан'}\n`;
+        message += `📝 Имя: ${userData.firstName || 'не указано'}\n\n`;
         
-        // Баланс генераций
-        const availableFree = user.free_quota || 0;
-        const availablePaid = user.paid_quota || 0;
+        // Баланс генераций (суммируем бесплатные и платные)
+        const availableFree = userData.free_quota || 0;
+        const availablePaid = userData.paid_quota || 0;
+        const walletBalance = Number(userData.wallet_balance_usdt ?? userData.wallet_balance ?? 0).toFixed(2);
+        const videosFromWallet = Math.floor(Number(walletBalance) / GENERATION_COST_USDT);
+        const totalPaid = availablePaid + videosFromWallet;
+        const totalGenerations = availableFree + totalPaid;
+        const rawCashback = userData?.totalCashback ?? referralStats?.totalCashback ?? userData?.affiliate_earnings ?? 0;
+        const cashbackAmount = Number(rawCashback || 0).toFixed(2);
         
-        message += `🎬 Баланс генераций:\n`;
-        message += `├─ 🎁 Доступно бесплатных: ${availableFree}\n`;
-        message += `└─ 💎 Доступно платных: ${availablePaid}\n\n`;
+        message += `🎬 Стоимость генерации: ${GENERATION_COST_USDT.toFixed(2)}$\n\n`;
+        message += `📊 Ваш баланс генераций: ${totalGenerations} видео\n`;
+        message += `🎁 Бесплатные генерации: ${availableFree}\n`;
+        message += `💎 Платные генерации: ${totalPaid}\n`;
+        message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
+        
+        if (Number(cashbackAmount) > 0) {
+            message += `💰 Доступно к выводу: ${cashbackAmount} USDT\n\n`;
+        }
         
         // Добавляем реферальную статистику
         if (referralStats && (referralStats.referredUsers > 0 || referralStats.expertReferrals > 0)) {
@@ -258,6 +279,7 @@ ${pkg.emoji} ${pkg.title} $${pkg.usdt} (${pkg.rub}₽)
             } else if (referralStats.referredUsers > 0) {
                 message += `└─ 🎁 Получено бонусов: ${referralStats.referredUsers}\n`;
             }
+            message += `\n`;
         }
         return message;
     },
@@ -273,6 +295,15 @@ export const MAIN_MENU_KEYBOARD = {
         [{ text: '👤 Личный кабинет', callback_data: 'profile' }],
         [{ text: '🎁 Приведи друга', callback_data: 'referral' }],
         [{ text: 'ℹ️ О проекте', callback_data: 'about' }]
+    ]
+};
+
+// Клавиатура при нулевом балансе и квотах (TASK-15)
+export const NO_BALANCE_KEYBOARD = {
+    inline_keyboard: [
+        [{ text: '💎 Криптовалюта', callback_data: 'pay_crypto_deposit' }],
+        [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
+        [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
     ]
 };
 
@@ -321,11 +352,28 @@ export const REFERRAL_TYPE_KEYBOARD = {
 
 export const ABOUT_KEYBOARD = {
     inline_keyboard: [
-        [{ text: '📺 YouTube Канал', url: 'https://youtube.com/@aiviral-media' }],
-        [{ text: '❓ FAQ', url: 'https://telegra.ph/MeeMee-FAQ-chasto-zadavaemye-voprosy-11-04' }],
-        [{ text: '🙊 Обратная связь', url: `https://t.me/${process.env.SUPPORT_USERNAME || 'i_prokhorovich'}` }],
-        [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
+        [{ text: '💬 Поддержка проекта', url: 'https://t.me/aiviral_main' }],
+        [{ text: '🔙 В личный кабинет', callback_data: 'profile' }],
+        [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
     ]
 };
+
+export function getMainMenuText(user) {
+    const freeQuota = user?.free_quota || 0;
+    const paidQuota = user?.paid_quota || 0;
+    const balanceUsdt = Number(user?.wallet_balance_usdt ?? user?.wallet_balance ?? 0).toFixed(2);
+    const videosFromWallet = Math.floor(Number(balanceUsdt) / GENERATION_COST_USDT);
+    const totalPaid = paidQuota + videosFromWallet;
+    const totalGenerations = freeQuota + totalPaid;
+
+    return `🎬 *Добро пожаловать в ViralApp!*\n\n` +
+        `Создай вирусный персонализированный мем или видео в лучшем качестве.\n` +
+        `🎬 *Стоимость генерации:* ${GENERATION_COST_USDT.toFixed(2)}$\n\n` +
+        `📊 *Ваш баланс генераций:* ${totalGenerations} видео\n` +
+        `🎁 Бесплатные генерации: ${freeQuota}\n` +
+        `💎 Платные генерации: ${totalPaid}\n` +
+        `💵 Баланс кошелька: ${balanceUsdt} USDT\n\n` +
+        `Выбери действие:`;
+}
 
 export const WATERMARK_IMAGE_PATH = process.env.WATERMARK_IMAGE_PATH || '/home/aiviral/memememe/2568-11-12_16.23.25-removebg-preview.png';

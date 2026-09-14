@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import redis from './src/redis.js';
+import redis from '../src/redis.js';
 
 async function testRedis() {
     try {

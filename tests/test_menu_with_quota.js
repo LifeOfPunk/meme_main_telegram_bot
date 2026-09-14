@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { UserService } from './src/services/User.service.js';
+import { UserService } from '../src/services/User.service.js';
 
 const userService = new UserService();
 

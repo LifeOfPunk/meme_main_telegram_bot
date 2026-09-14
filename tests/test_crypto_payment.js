@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { PaymentCryptoService } from './src/services/PaymentCrypto.service.js';
+import { PaymentCryptoService } from '../src/services/PaymentCrypto.service.js';
 
 console.log('🧪 Testing Crypto Payment with 0xProcessing\n');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

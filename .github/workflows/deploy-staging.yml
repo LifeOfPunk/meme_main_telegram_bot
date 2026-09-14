@@ -35,6 +35,17 @@ jobs:
             git fetch origin staging
             git reset --hard origin/staging
 
+            echo "🌐 Syncing static site pages..."
+            if [ -d "site" ]; then
+              sudo cp -r site/* /opt/aiviral/n8n/site/
+            fi
+
+            echo "⚙️ Syncing Caddyfile and reloading Caddy..."
+            if [ -f "infra/Caddyfile" ]; then
+              sudo cp infra/Caddyfile /opt/aiviral/n8n/Caddyfile
+              sudo docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile || echo "⚠️ Caddy reload skipped or container starting"
+            fi
+
             echo "🐳 Building and starting Staging containers..."
             sudo docker compose -f docker-compose.staging.yml build
             sudo docker compose -f docker-compose.staging.yml up -d --remove-orphans

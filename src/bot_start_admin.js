@@ -5,7 +5,7 @@ import { OrderService } from './services/Order.service.js';
 import { GenerationService } from './services/Generation.service.js';
 import { ReferralService } from './services/Referral.service.js';
 import { errorLogger } from './services/ErrorLogger.service.js';
-import { ADMINS } from './config.js';
+import { ADMINS, GENERATION_COST_USDT } from './config.js';
 import axios from 'axios';
 import redis from './redis.js';
 
@@ -22,9 +22,60 @@ if (!process.env.BOT_TOKEN) {
 const bot = new Telegraf(process.env.BOT_TOKEN_ADMIN);
 console.log(`✅ Admin bot initialized with token: ${process.env.BOT_TOKEN_ADMIN?.substring(0, 10)}...`);
 
-// Создаём отдельный экземпляр для рассылки через основной бот
+// Создаём экземпляры ботов для уведомлений
 const mainBot = new Telegraf(process.env.BOT_TOKEN);
 console.log(`✅ Main bot initialized with token: ${process.env.BOT_TOKEN?.substring(0, 10)}...`);
+
+const stagingBot = process.env.STAGING_BOT_TOKEN ? new Telegraf(process.env.STAGING_BOT_TOKEN) : null;
+if (stagingBot) {
+    console.log(`✅ Staging bot initialized with token: ${process.env.STAGING_BOT_TOKEN?.substring(0, 10)}...`);
+}
+
+// Отправка уведомлений об изменении баланса и в боевой бот, и в стейджинг-бот
+async function notifyUserQuotaChange(userId, message) {
+    const options = { parse_mode: 'HTML' };
+    if (mainBot) {
+        try {
+            await mainBot.telegram.sendMessage(userId, message, options);
+        } catch (err) {
+            console.log(`⚠️ Main bot could not notify user ${userId}: ${err.message}`);
+        }
+    }
+    if (stagingBot) {
+        try {
+            await stagingBot.telegram.sendMessage(userId, message, options);
+        } catch (err) {
+            console.log(`⚠️ Staging bot could not notify user ${userId}: ${err.message}`);
+        }
+    }
+}
+
+// Хелпер расчета полного баланса (бесплатные + платные + кошелек USDT)
+function getUserBalanceBreakdown(user, customFreeQuota = null) {
+    const freeQuota = customFreeQuota !== null ? customFreeQuota : Number(user?.free_quota || 0);
+    const paidQuota = Number(user?.paid_quota || 0);
+    const walletBalance = Number(user?.wallet_balance_usdt || 0);
+    const paidFromWallet = Math.floor(walletBalance / GENERATION_COST_USDT);
+    const totalPaid = paidQuota + paidFromWallet;
+    const totalAvailable = freeQuota + totalPaid;
+
+    let text = `📊 <b>Ваш баланс генераций:</b> ${totalAvailable} видео\n` +
+               `🎁 <b>Бесплатные генерации:</b> ${freeQuota}\n` +
+               `💎 <b>Платные генерации:</b> ${totalPaid}`;
+    if (walletBalance > 0) {
+        text += `\n💵 <b>Баланс кошелька:</b> ${walletBalance.toFixed(2)} USDT`;
+    }
+
+    return {
+        freeQuota,
+        paidQuota,
+        walletBalance,
+        paidFromWallet,
+        totalPaid,
+        totalAvailable,
+        notificationText: text
+    };
+}
 
 const userService = new UserService();
 const orderService = new OrderService();
@@ -548,9 +599,9 @@ bot.action(/add_quota_confirm_(\d+)_(\d+)/, async (ctx) => {
         await ctx.editMessageText(
             `✅ Генерации добавлены!\n\n` +
             `👤 User ID: ${userId}\n` +
-            `📊 Было: ${oldQuota}\n` +
+            `📊 Было бесплатных: ${oldQuota}\n` +
             `➕ Добавлено: ${amount}\n` +
-            `📊 Стало: ${newQuota}`,
+            `📊 Стало бесплатных: ${newQuota}`,
             {
                 reply_markup: {
                     inline_keyboard: [
@@ -561,15 +612,14 @@ bot.action(/add_quota_confirm_(\d+)_(\d+)/, async (ctx) => {
             }
         );
         
-        // Уведомляем пользователя о добавлении генераций
-        try {
-            await mainBot.telegram.sendMessage(
-                userId,
-                `🎁 Вам начислено ${amount} бесплатных генераций!\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-            );
-        } catch (notifyErr) {
-            console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-        }
+        // Уведомляем пользователя о добавлении генераций (в боевой и стейджинг-бот)
+        const updatedUser = await userService.getUser(userId);
+        const balanceInfo = getUserBalanceBreakdown(updatedUser, newQuota);
+        await notifyUserQuotaChange(
+            userId,
+            `🎁 <b>Вам начислено ${amount} бесплатных генераций!</b>\n\n` +
+            balanceInfo.notificationText
+        );
     } catch (err) {
         console.error('❌ Error in add_quota_confirm:', err);
         await ctx.answerCbQuery('Ошибка при добавлении');
@@ -642,9 +692,9 @@ bot.action(/remove_quota_confirm_(\d+)_(\d+)/, async (ctx) => {
         await ctx.editMessageText(
             `✅ Генерации удалены!\n\n` +
             `👤 User ID: ${userId}\n` +
-            `📊 Было: ${oldQuota}\n` +
+            `📊 Было бесплатных: ${oldQuota}\n` +
             `➖ Удалено: ${amount}\n` +
-            `📊 Стало: ${newQuota}`,
+            `📊 Стало бесплатных: ${newQuota}`,
             {
                 reply_markup: {
                     inline_keyboard: [
@@ -655,15 +705,14 @@ bot.action(/remove_quota_confirm_(\d+)_(\d+)/, async (ctx) => {
             }
         );
         
-        // Уведомляем пользователя об удалении генераций
-        try {
-            await mainBot.telegram.sendMessage(
-                userId,
-                `⚠️ С вашего баланса списано ${amount} генераций администратором.\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-            );
-        } catch (notifyErr) {
-            console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-        }
+        // Уведомляем пользователя об удалении генераций (в боевой и стейджинг-бот)
+        const updatedUser = await userService.getUser(userId);
+        const balanceInfo = getUserBalanceBreakdown(updatedUser, newQuota);
+        await notifyUserQuotaChange(
+            userId,
+            `⚠️ <b>С вашего баланса списано ${amount} генераций администратором.</b>\n\n` +
+            balanceInfo.notificationText
+        );
     } catch (err) {
         console.error('❌ Error in remove_quota_confirm:', err);
         await ctx.answerCbQuery('Ошибка при удалении');
@@ -678,7 +727,7 @@ bot.action('users', async (ctx) => {
         
         // Подсчёт активных пользователей (с генерациями)
         const activeUsers = allUsers.filter(u => u.total_generations > 0);
-        const paidUsers = allUsers.filter(u => u.paid_quota > 0 || u.total_spent > 0);
+        const paidUsers = allUsers.filter(u => u.paid_quota > 0 || u.total_spent > 0 || Number(u.wallet_balance_usdt || 0) > 0);
 
         let message = '👥 Статистика пользователей:\n\n';
         message += `├─ Всего: ${totalUsers}\n`;
@@ -714,13 +763,15 @@ bot.action(/show_user_(\d+)/, async (ctx) => {
             return;
         }
         
+        const balanceInfo = getUserBalanceBreakdown(user);
         let message = `👤 Пользователь ${userId}:\n\n`;
         message += `📝 Имя: ${user.firstName || ''} ${user.lastName || ''}\n`;
         message += `🆔 Username: @${user.username || 'нет'}\n\n`;
         message += `🎬 Генерации:\n`;
-        message += `├─ 🎁 Бесплатных: ${user.free_quota || 0}\n`;
-        message += `├─ 💎 Платных: ${user.paid_quota || 0}\n`;
-        message += `├─ 📊 Всего доступно: ${(user.free_quota || 0) + (user.paid_quota || 0)}\n`;
+        message += `├─ 🎁 Бесплатных: ${balanceInfo.freeQuota}\n`;
+        message += `├─ 💎 Платных: ${balanceInfo.totalPaid}\n`;
+        message += `├─ 📊 Всего доступно: ${balanceInfo.totalAvailable}\n`;
+        message += `├─ 💵 Баланс кошелька: ${balanceInfo.walletBalance.toFixed(2)} USDT\n`;
         message += `├─ ✅ Успешно сделано: ${user.successful_generations || 0}\n`;
         message += `└─ ❌ Ошибок: ${user.failed_generations || 0}\n\n`;
         message += `💰 Потрачено: ${user.total_spent || 0}₽\n`;
@@ -1062,13 +1113,15 @@ bot.on('text', async (ctx) => {
                 return await ctx.reply('❌ Пользователь не найден');
             }
             
+            const balanceInfo = getUserBalanceBreakdown(user);
             let message = `👤 Пользователь ${userId}:\n\n`;
             message += `📝 Имя: ${user.firstName || ''} ${user.lastName || ''}\n`;
             message += `🆔 Username: @${user.username || 'нет'}\n\n`;
             message += `🎬 Генерации:\n`;
-            message += `├─ 🎁 Бесплатных: ${user.free_quota || 0}\n`;
-            message += `├─ 💎 Платных: ${user.paid_quota || 0}\n`;
-            message += `├─ 📊 Всего доступно: ${(user.free_quota || 0) + (user.paid_quota || 0)}\n`;
+            message += `├─ 🎁 Бесплатных: ${balanceInfo.freeQuota}\n`;
+            message += `├─ 💎 Платных: ${balanceInfo.totalPaid}\n`;
+            message += `├─ 📊 Всего доступно: ${balanceInfo.totalAvailable}\n`;
+            message += `├─ 💵 Баланс кошелька: ${balanceInfo.walletBalance.toFixed(2)} USDT\n`;
             message += `├─ ✅ Успешно сделано: ${user.successful_generations || 0}\n`;
             message += `└─ ❌ Ошибок: ${user.failed_generations || 0}\n\n`;
             message += `💰 Потрачено: ${user.total_spent || 0}₽\n`;
@@ -1111,9 +1164,9 @@ bot.on('text', async (ctx) => {
             await ctx.reply(
                 `✅ Генерации добавлены!\n\n` +
                 `👤 User ID: ${userId}\n` +
-                `📊 Было: ${oldQuota}\n` +
+                `📊 Было бесплатных: ${oldQuota}\n` +
                 `➕ Добавлено: ${amount}\n` +
-                `📊 Стало: ${newQuota}`,
+                `📊 Стало бесплатных: ${newQuota}`,
                 {
                     reply_markup: {
                         inline_keyboard: [
@@ -1124,15 +1177,14 @@ bot.on('text', async (ctx) => {
                 }
             );
             
-            // Уведомляем пользователя
-            try {
-                await mainBot.telegram.sendMessage(
-                    userId,
-                    `🎁 Вам начислено ${amount} бесплатных генераций!\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-                );
-            } catch (notifyErr) {
-                console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-            }
+            // Уведомляем пользователя (в боевой и стейджинг-бот)
+            const updatedUser = await userService.getUser(userId);
+            const balanceInfo = getUserBalanceBreakdown(updatedUser, newQuota);
+            await notifyUserQuotaChange(
+                userId,
+                `🎁 <b>Вам начислено ${amount} бесплатных генераций!</b>\n\n` +
+                balanceInfo.notificationText
+            );
             
             delete ctx.session.quotaAction;
             return;
@@ -1159,9 +1211,9 @@ bot.on('text', async (ctx) => {
             await ctx.reply(
                 `✅ Генерации удалены!\n\n` +
                 `👤 User ID: ${userId}\n` +
-                `📊 Было: ${oldQuota}\n` +
+                `📊 Было бесплатных: ${oldQuota}\n` +
                 `➖ Удалено: ${amount}\n` +
-                `📊 Стало: ${newQuota}`,
+                `📊 Стало бесплатных: ${newQuota}`,
                 {
                     reply_markup: {
                         inline_keyboard: [
@@ -1172,15 +1224,14 @@ bot.on('text', async (ctx) => {
                 }
             );
             
-            // Уведомляем пользователя
-            try {
-                await mainBot.telegram.sendMessage(
-                    userId,
-                    `⚠️ С вашего баланса списано ${amount} генераций администратором.\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-                );
-            } catch (notifyErr) {
-                console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-            }
+            // Уведомляем пользователя (в боевой и стейджинг-бот)
+            const updatedUser = await userService.getUser(userId);
+            const balanceInfo = getUserBalanceBreakdown(updatedUser, newQuota);
+            await notifyUserQuotaChange(
+                userId,
+                `⚠️ <b>С вашего баланса списано ${amount} генераций администратором.</b>\n\n` +
+                balanceInfo.notificationText
+            );
             
             delete ctx.session.quotaAction;
             return;
