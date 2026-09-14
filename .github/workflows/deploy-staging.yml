@@ -6,8 +6,13 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Гейт: деплой не стартует, пока CI не прошёл зелёным
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   deploy-staging:
     name: Deploy to Staging Environment
+    needs: ci
     runs-on: ubuntu-latest
     concurrency:
       group: staging-deploy
@@ -31,32 +36,40 @@ jobs:
             echo "🚀 [STAGING] Starting deploy in $DEPLOY_PATH..."
             cd "$DEPLOY_PATH"
 
+            # Паритет с prod: гарантируем права на запись для git reset
+            sudo chown -R "$(id -un):$(id -gn)" "$DEPLOY_PATH" || true
+
             echo "📦 Fetching latest changes from staging branch..."
             git fetch origin staging
             git reset --hard origin/staging
 
             echo "🌐 Syncing static site pages..."
             if [ -d "site" ]; then
-              sudo cp -r site/* /opt/aiviral/n8n/site/
+              sudo cp -r site/* /opt/aiviral/n8n/site/ || true
             fi
 
-            echo "⚙️ Syncing Caddyfile and reloading Caddy..."
-            if [ -f "infra/Caddyfile" ]; then
-              sudo cp infra/Caddyfile /opt/aiviral/n8n/Caddyfile
-              sudo docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile || echo "⚠️ Caddy reload skipped or container starting"
-            fi
+            # ПРИМЕЧАНИЕ: Caddyfile — общий для обеих сред и управляется prod-деплоем
+            # (в infra/Caddyfile уже есть маршруты /webhook/staging/*), поэтому здесь его НЕ трогаем,
+            # чтобы стейдж-деплой не перезаписывал конфиг прода.
 
             echo "🐳 Building and starting Staging containers..."
             sudo docker compose -f docker-compose.staging.yml build
             sudo docker compose -f docker-compose.staging.yml up -d --remove-orphans
 
-            echo "⏳ Waiting 5s for services..."
-            sleep 5
+            echo "⏳ Health check (backend /health, до 60с)..."
+            ok=0
+            for i in $(seq 1 12); do
+              if curl -fsS http://127.0.0.1:3006/health >/dev/null 2>&1; then ok=1; break; fi
+              sleep 5
+            done
 
             echo "📊 Staging container status:"
             sudo docker compose -f docker-compose.staging.yml ps
-
             echo "📋 Staging bot logs:"
             sudo docker compose -f docker-compose.staging.yml logs --tail 25 bot
 
-            echo "✅ [STAGING] Deploy complete!"
+            if [ "$ok" != "1" ]; then
+              echo "❌ [STAGING] Backend health check FAILED — деплой считается неуспешным"
+              exit 1
+            fi
+            echo "✅ [STAGING] Deploy complete and healthy!"
