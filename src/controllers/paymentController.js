@@ -625,13 +625,15 @@ export async function handleCheckPayment(ctx, orderId) {
         if (result.status === 'paid') {
             console.log(`✅ Payment confirmed for order: ${orderId}`);
 
-            if (order.isPaid) {
-                console.log(`⚠️ Order ${orderId} already processed as paid.`);
+            // P0-03: атомарный идемпотентный claim
+            const claimed = await orderService.tryClaimForPayment(orderId);
+            if (!claimed) {
+                console.log(`⚠️ Order ${orderId} already claimed.`);
                 return await ctx.reply('✅ Этот платеж уже успешно зачислен на ваш баланс!');
             }
-            
-            // Зачисляем фактически поступившую сумму 1 к 1 на баланс USDT (TASK-02-03)
-            const depositAmount = Number(result.amount || order.amount || 2.0);
+
+            // P0-04: начисляем сумму ЗАКАЗА, а не весь баланс адреса
+            const depositAmount = Number(order.amount || 0);
 
             // Отмечаем заказ как оплаченный
             await orderService.markAsPaid(orderId, {
@@ -639,17 +641,17 @@ export async function handleCheckPayment(ctx, orderId) {
                 status: 'paid'
             });
             
-            // Если выбран фиксированный пакет - начисляем генерации
+            // P1-07: пакет -> только генерации; депозит -> только баланс
             const pkg = PACKAGES[order.package];
             if (pkg) {
                 await userService.addPaidQuota(order.userId, pkg.generations);
+            } else {
+                await userService.addWalletBalance(order.userId, depositAmount);
             }
-            
-            await userService.addWalletBalance(order.userId, depositAmount);
             
             // Обрабатываем кешбэк
             try {
-                await referralService.processExpertCashback(order.userId, depositAmount);
+                await referralService.processExpertCashback(order.userId, pkg ? Number(pkg.usdt || 0) : depositAmount); // P1-08
             } catch (cashbackErr) {
                 console.error('⚠️ Cashback error:', cashbackErr.message);
             }
@@ -690,23 +692,24 @@ export async function handleCheckPayment(ctx, orderId) {
 export async function handlePaymentSuccess(bot, orderId) {
     try {
         const order = await orderService.getOrderById(orderId);
-        if (!order || order.isPaid) return;
-        
-        // Отмечаем заказ как оплаченный
+        if (!order) return;
+
+        // P0-03: атомарный идемпотентный claim
+        const claimed = await orderService.tryClaimForPayment(orderId);
+        if (!claimed) return;
         await orderService.markAsPaid(orderId);
-        
-        // Добавляем генерации пользователю если фиксированный пакет
+
+        // P1-07: пакет -> только генерации; депозит -> только баланс
         const pkg = PACKAGES[order.package];
+        const depositAmount = Number(order.amount || 0);
         if (pkg) {
             await userService.addPaidQuota(order.userId, pkg.generations);
+        } else {
+            await userService.addWalletBalance(order.userId, depositAmount);
         }
-        
-        // Зачисляем сумму 1 к 1 на баланс USDT (TASK-02-03)
-        const depositAmount = Number(order.amount || 0.50);
-        await userService.addWalletBalance(order.userId, depositAmount);
-        
+
         // Обрабатываем реферальный кешбэк для эксперта
-        const cashbackResult = await referralService.processExpertCashback(order.userId, order.amount);
+        const cashbackResult = await referralService.processExpertCashback(order.userId, pkg ? Number(pkg.usdt || 0) : depositAmount);
         
         // Если был начислен кешбек, уведомляем эксперта
         if (cashbackResult) {

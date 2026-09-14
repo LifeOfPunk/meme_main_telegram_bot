@@ -52,7 +52,7 @@ export class ReferralService {
             const updatedReferredUsers = [...(referrer.referredUsers || []), newUserId];
             await this.userService.updateUser(referrerId, { 
                 referredUsers: updatedReferredUsers,
-                $inc: { totalReferrals: 1 }
+                totalReferrals: (referrer.totalReferrals || 0) + 1
             });
             
             // Логируем активность
@@ -104,7 +104,7 @@ export class ReferralService {
             const updatedExpertReferrals = [...(expert.expertReferrals || []), newUserId];
             await this.userService.updateUser(expertId, { 
                 expertReferrals: updatedExpertReferrals,
-                $inc: { totalReferrals: 1 }
+                totalReferrals: (expert.totalReferrals || 0) + 1
             });
 
             // Логируем для антиабуз анализа
@@ -190,7 +190,7 @@ export class ReferralService {
                 const totalCashback1 = (expert1.totalCashback || 0) + cashback1;
                 await this.userService.updateUser(level1ExpertId, { totalCashback: totalCashback1 });
 
-                console.log(`💰 Level 1 Cashback ${cashback1}₽ (25%) credited to expert ${level1ExpertId}`);
+                console.log(`💰 Level 1 Cashback ${cashback1} USDT (25%) credited to expert ${level1ExpertId}`);
                 results.push(cashbackData1);
                 
                 // Вторая линия: эксперт, который привел эксперта первой линии (10%)
@@ -220,7 +220,7 @@ export class ReferralService {
                     const totalCashback2 = (expert2.totalCashback || 0) + cashback2;
                     await this.userService.updateUser(level2ExpertId, { totalCashback: totalCashback2 });
 
-                    console.log(`💰 Level 2 Cashback ${cashback2}₽ (10%) credited to expert ${level2ExpertId}`);
+                    console.log(`💰 Level 2 Cashback ${cashback2} USDT (10%) credited to expert ${level2ExpertId}`);
                     results.push(cashbackData2);
                 }
             }
