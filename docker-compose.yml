@@ -44,6 +44,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - STAGING_REDIS_URL=redis://viralapp-staging-redis:6379/0
+      - STAGING_BOT_TOKEN=${STAGING_BOT_TOKEN:-8556250060:AAG6bTcn5ce1pHWnNTdmHkpnZN0y8qEaSV4}
       - NODE_ENV=production
     depends_on:
       redis:

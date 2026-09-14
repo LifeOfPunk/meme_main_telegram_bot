@@ -22,9 +22,32 @@ if (!process.env.BOT_TOKEN) {
 const bot = new Telegraf(process.env.BOT_TOKEN_ADMIN);
 console.log(`✅ Admin bot initialized with token: ${process.env.BOT_TOKEN_ADMIN?.substring(0, 10)}...`);
 
-// Создаём отдельный экземпляр для рассылки через основной бот
+// Создаём экземпляры ботов для уведомлений
 const mainBot = new Telegraf(process.env.BOT_TOKEN);
 console.log(`✅ Main bot initialized with token: ${process.env.BOT_TOKEN?.substring(0, 10)}...`);
+
+const stagingBot = process.env.STAGING_BOT_TOKEN ? new Telegraf(process.env.STAGING_BOT_TOKEN) : null;
+if (stagingBot) {
+    console.log(`✅ Staging bot initialized with token: ${process.env.STAGING_BOT_TOKEN?.substring(0, 10)}...`);
+}
+
+// Отправка уведомлений об изменении баланса и в боевой бот, и в стейджинг-бот
+async function notifyUserQuotaChange(userId, message) {
+    if (mainBot) {
+        try {
+            await mainBot.telegram.sendMessage(userId, message);
+        } catch (err) {
+            console.log(`⚠️ Main bot could not notify user ${userId}: ${err.message}`);
+        }
+    }
+    if (stagingBot) {
+        try {
+            await stagingBot.telegram.sendMessage(userId, message);
+        } catch (err) {
+            console.log(`⚠️ Staging bot could not notify user ${userId}: ${err.message}`);
+        }
+    }
+}
 
 const userService = new UserService();
 const orderService = new OrderService();
@@ -561,15 +584,11 @@ bot.action(/add_quota_confirm_(\d+)_(\d+)/, async (ctx) => {
             }
         );
         
-        // Уведомляем пользователя о добавлении генераций
-        try {
-            await mainBot.telegram.sendMessage(
-                userId,
-                `🎁 Вам начислено ${amount} бесплатных генераций!\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-            );
-        } catch (notifyErr) {
-            console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-        }
+        // Уведомляем пользователя о добавлении генераций (в боевой и стейджинг-бот)
+        await notifyUserQuotaChange(
+            userId,
+            `🎁 Вам начислено ${amount} бесплатных генераций!\n\n💎 Ваш новый баланс: ${newQuota} генераций`
+        );
     } catch (err) {
         console.error('❌ Error in add_quota_confirm:', err);
         await ctx.answerCbQuery('Ошибка при добавлении');
@@ -655,15 +674,11 @@ bot.action(/remove_quota_confirm_(\d+)_(\d+)/, async (ctx) => {
             }
         );
         
-        // Уведомляем пользователя об удалении генераций
-        try {
-            await mainBot.telegram.sendMessage(
-                userId,
-                `⚠️ С вашего баланса списано ${amount} генераций администратором.\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-            );
-        } catch (notifyErr) {
-            console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-        }
+        // Уведомляем пользователя об удалении генераций (в боевой и стейджинг-бот)
+        await notifyUserQuotaChange(
+            userId,
+            `⚠️ С вашего баланса списано ${amount} генераций администратором.\n\n💎 Ваш новый баланс: ${newQuota} генераций`
+        );
     } catch (err) {
         console.error('❌ Error in remove_quota_confirm:', err);
         await ctx.answerCbQuery('Ошибка при удалении');
@@ -1124,15 +1139,11 @@ bot.on('text', async (ctx) => {
                 }
             );
             
-            // Уведомляем пользователя
-            try {
-                await mainBot.telegram.sendMessage(
-                    userId,
-                    `🎁 Вам начислено ${amount} бесплатных генераций!\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-                );
-            } catch (notifyErr) {
-                console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-            }
+            // Уведомляем пользователя (в боевой и стейджинг-бот)
+            await notifyUserQuotaChange(
+                userId,
+                `🎁 Вам начислено ${amount} бесплатных генераций!\n\n💎 Ваш новый баланс: ${newQuota} генераций`
+            );
             
             delete ctx.session.quotaAction;
             return;
@@ -1172,15 +1183,11 @@ bot.on('text', async (ctx) => {
                 }
             );
             
-            // Уведомляем пользователя
-            try {
-                await mainBot.telegram.sendMessage(
-                    userId,
-                    `⚠️ С вашего баланса списано ${amount} генераций администратором.\n\n💎 Ваш новый баланс: ${newQuota} генераций`
-                );
-            } catch (notifyErr) {
-                console.log(`⚠️ Could not notify user ${userId}: ${notifyErr.message}`);
-            }
+            // Уведомляем пользователя (в боевой и стейджинг-бот)
+            await notifyUserQuotaChange(
+                userId,
+                `⚠️ С вашего баланса списано ${amount} генераций администратором.\n\n💎 Ваш новый баланс: ${newQuota} генераций`
+            );
             
             delete ctx.session.quotaAction;
             return;
