@@ -409,7 +409,7 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposi
 
         if (!effectiveRate || effectiveRate <= 0) {
             if (isGram) {
-                effectiveRate = await currencyService.getCryptoRate('TONUSDT');
+                effectiveRate = await currencyService.getCryptoRate('GRAMUSDT');
             } else if (isBnb) {
                 effectiveRate = await currencyService.getCryptoRate('BNBUSDT');
             }
@@ -517,7 +517,7 @@ export async function handleShowQrCode(ctx, orderId) {
 
         if (!effectiveRate || effectiveRate <= 0) {
             if (isGram) {
-                effectiveRate = await currencyService.getCryptoRate('TONUSDT');
+                effectiveRate = await currencyService.getCryptoRate('GRAMUSDT');
             } else if (isBnb) {
                 effectiveRate = await currencyService.getCryptoRate('BNBUSDT');
             }

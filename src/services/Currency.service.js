@@ -56,7 +56,7 @@ export class CurrencyService {
     }
 
     // Получить курс криптовалюты к USDT с Binance с кешированием в Redis
-    async getCryptoRate(symbol = 'TONUSDT') {
+    async getCryptoRate(symbol = 'GRAMUSDT') {
         const cleanSymbol = symbol.toUpperCase();
         const cacheKey = `binance_rate_${cleanSymbol}`;
         const cacheTtl = 10 * 60; // 10 минут кеша
