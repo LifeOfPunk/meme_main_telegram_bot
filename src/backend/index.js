@@ -77,6 +77,8 @@ function redactHeaders(headers = {}) {
 // URL соседнего контура (стейдж -> прод или прод -> стейдж)
 const isStagingEnv = process.env.NODE_ENV === 'staging' || process.env.BOT_NAME === 'meemee_official_bot';
 const PEER_BACKEND_URL = process.env.PEER_BACKEND_URL || (isStagingEnv ? 'http://viralapp-backend:3005' : 'http://viralapp-staging-backend:3005');
+// P1-06: кросс-средовой форвардинг вебхуков выключен по умолчанию (включать осознанно).
+const PEER_FORWARD_ENABLED = process.env.PEER_FORWARD_ENABLED === 'true';
 
 // Проксирование вебхука в соседний бэкенд, если заказ не найден локально
 async function forwardWebhookToPeer(req, res, peerUrl) {
@@ -210,7 +212,7 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
 
         if (!order) {
             console.warn('⚠️ Lava order not found locally:', { orderId, invoiceId });
-            if (PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
+            if (PEER_FORWARD_ENABLED && PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
                 return await forwardWebhookToPeer(req, res, PEER_BACKEND_URL);
             }
             return res.status(200).json({ success: true, message: 'Order not found, acknowledged' });
@@ -378,7 +380,7 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
 
         if (!order) {
             console.warn('⚠️ Crypto order not found locally:', { billingID, paymentId, address });
-            if (PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
+            if (PEER_FORWARD_ENABLED && PEER_BACKEND_URL && !req.headers['x-peer-forwarded']) {
                 return await forwardWebhookToPeer(req, res, PEER_BACKEND_URL);
             }
             return res.status(200).json({ success: true, message: 'Order not found, acknowledged' });
