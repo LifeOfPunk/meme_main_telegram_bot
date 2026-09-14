@@ -302,7 +302,37 @@ export class GenerationService {
         }
     }
 
-    // Определение языка и добавление речевой директивы для видеомодели
+    // Определение языка (Приоритет 1: явная команда в тексте, Приоритет 2: анализ алфавита)
+    detectLanguage(text) {
+        if (!text) return 'Russian';
+        const str = String(text);
+
+        // Приоритет 1: Явные указания пользователя в тексте
+        if (/на\s+английском|по-английски|по\s+английски|английский\s+язык|in\s+english|english\s+language|english\s+audio/i.test(str)) {
+            return 'English';
+        }
+        if (/на\s+русском|по-русски|по\s+русски|русский\s+язык|in\s+russian|russian\s+language|russian\s+audio/i.test(str)) {
+            return 'Russian';
+        }
+        if (/на\s+испанском|по-испански|in\s+spanish|spanish\s+language/i.test(str)) {
+            return 'Spanish';
+        }
+
+        // Приоритет 2: Анализ преобладающего алфавита
+        const cyrillicCount = (str.match(/[\u0400-\u04FF]/g) || []).length;
+        const latinCount = (str.match(/[a-zA-Z]/g) || []).length;
+
+        if (cyrillicCount > 0 && cyrillicCount >= latinCount) {
+            return 'Russian';
+        }
+        if (latinCount > cyrillicCount) {
+            return 'English';
+        }
+
+        return cyrillicCount > 0 ? 'Russian' : 'English';
+    }
+
+    // Формирование промпта с динамической речевой директивой для видеомодели
     formatPromptWithLanguage(prompt) {
         if (!prompt) return '';
 
@@ -310,19 +340,15 @@ export class GenerationService {
         if (typeof prompt === 'object' && prompt !== null) {
             const promptCopy = JSON.parse(JSON.stringify(prompt));
             const serialized = JSON.stringify(promptCopy);
-            const isRussian = /[\u0400-\u04FF]/.test(serialized);
+            const lang = this.detectLanguage(serialized);
 
-            if (isRussian) {
-                promptCopy.language = 'Russian';
-                promptCopy.audio_directive = 'All spoken dialogue, character voices, and singing must be strictly in Russian language. Native Russian pronunciation, no English translation.';
-                if (promptCopy.notes) {
-                    promptCopy.notes += ' All speech and dialogue must be voiced strictly in Russian.';
-                } else {
-                    promptCopy.notes = 'All speech and dialogue must be voiced strictly in Russian.';
-                }
+            promptCopy.language = lang;
+            if (lang === 'Russian') {
+                promptCopy.audio_directive = 'All spoken dialogue, singing, and character voices must be in Russian language (Русский язык).';
+                promptCopy.notes = (promptCopy.notes ? promptCopy.notes + ' ' : '') + 'All speech and dialogue must be voiced strictly in Russian.';
             } else {
-                promptCopy.language = 'English';
-                promptCopy.audio_directive = 'All spoken dialogue and character voices must be in English.';
+                promptCopy.audio_directive = `All spoken dialogue and character voices must be in ${lang}.`;
+                promptCopy.notes = (promptCopy.notes ? promptCopy.notes + ' ' : '') + `All speech and dialogue must be voiced in ${lang}.`;
             }
 
             return JSON.stringify(promptCopy);
@@ -330,12 +356,14 @@ export class GenerationService {
 
         // Если это строка (кастомный промпт пользователя)
         const str = String(prompt).trim();
-        const isRussian = /[\u0400-\u04FF]/.test(str);
+        const lang = this.detectLanguage(str);
 
-        if (isRussian) {
-            return `[Language: Russian / Русский]\n[Audio & Speech Directive: All dialogue, speech, and character voices must be spoken strictly in Russian language. Native Russian pronunciation, no English translation, no English accent. All quoted speech must be spoken exactly in Russian.]\n\n${str}`;
+        if (lang === 'Russian') {
+            return `Video scene:\n${str}\n\nAudio track directives:\n- Audio language: Russian (Русский язык)\n- All spoken dialogue, character voices, and vocal reactions must be in Russian language only`;
+        } else if (lang === 'Spanish') {
+            return `Video scene:\n${str}\n\nAudio track directives:\n- Audio language: Spanish (Español)\n- All spoken dialogue, character voices, and vocal reactions must be in Spanish language only`;
         } else {
-            return `[Language: English]\n[Audio & Speech Directive: All dialogue and character voices must be in English.]\n\n${str}`;
+            return `Video scene:\n${str}\n\nAudio track directives:\n- Audio language: English\n- All spoken dialogue, character voices, and vocal reactions must be in English language only`;
         }
     }
 
