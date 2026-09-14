@@ -252,14 +252,15 @@ ${pkg.emoji} ${pkg.title}
         const availablePaid = userData.paid_quota || 0;
         const walletBalance = Number(userData.wallet_balance_usdt ?? userData.wallet_balance ?? 0).toFixed(2);
         const videosFromWallet = Math.floor(Number(walletBalance) / GENERATION_COST_USDT);
-        const totalGenerations = availableFree + availablePaid + videosFromWallet;
+        const totalPaid = availablePaid + videosFromWallet;
+        const totalGenerations = availableFree + totalPaid;
         const rawCashback = userData?.totalCashback ?? referralStats?.totalCashback ?? userData?.affiliate_earnings ?? 0;
         const cashbackAmount = Number(rawCashback || 0).toFixed(2);
         
         message += `🎬 Стоимость генерации: ${GENERATION_COST_USDT.toFixed(2)}$\n\n`;
         message += `📊 Ваш баланс генераций: ${totalGenerations} видео\n`;
         message += `🎁 Бесплатные генерации: ${availableFree}\n`;
-        message += `💎 Платные пакеты: ${availablePaid}\n`;
+        message += `💎 Платные генерации: ${totalPaid}\n`;
         message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
         
         if (Number(cashbackAmount) > 0) {
@@ -362,14 +363,15 @@ export function getMainMenuText(user) {
     const paidQuota = user?.paid_quota || 0;
     const balanceUsdt = Number(user?.wallet_balance_usdt ?? user?.wallet_balance ?? 0).toFixed(2);
     const videosFromWallet = Math.floor(Number(balanceUsdt) / GENERATION_COST_USDT);
-    const totalGenerations = freeQuota + paidQuota + videosFromWallet;
+    const totalPaid = paidQuota + videosFromWallet;
+    const totalGenerations = freeQuota + totalPaid;
 
     return `🎬 *Добро пожаловать в ViralApp!*\n\n` +
         `Создай вирусный персонализированный мем или видео в лучшем качестве.\n` +
         `🎬 *Стоимость генерации:* ${GENERATION_COST_USDT.toFixed(2)}$\n\n` +
         `📊 *Ваш баланс генераций:* ${totalGenerations} видео\n` +
         `🎁 Бесплатные генерации: ${freeQuota}\n` +
-        `💎 Платные пакеты: ${paidQuota}\n` +
+        `💎 Платные генерации: ${totalPaid}\n` +
         `💵 Баланс кошелька: ${balanceUsdt} USDT\n\n` +
         `Выбери действие:`;
 }
