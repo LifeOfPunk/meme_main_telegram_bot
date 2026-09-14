@@ -72,7 +72,7 @@ export async function handlePayCardPackages(ctx) {
             [{ text: '📦 2250₽', callback_data: 'pay_card_pack_50' }],
             [{ text: '🎁 4250₽', callback_data: 'pay_card_pack_100' }],
             [{ text: '💎 20 000₽', callback_data: 'pay_card_pack_500' }],
-            [{ text: '🔙 Назад к способам оплаты', callback_data: 'create_video' }]
+            [{ text: '🔙 Назад к способам оплаты', callback_data: 'buy' }]
         ];
 
         const message = 'Выберите пакет для оплаты картой:';
