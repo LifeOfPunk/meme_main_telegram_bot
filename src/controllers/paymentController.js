@@ -566,6 +566,32 @@ export async function handleCheckPayment(ctx, orderId) {
             console.log(`✅ Order already paid: ${orderId}`);
             return await safeAnswerCbQuery(ctx, 'Этот заказ уже оплачен!', { show_alert: true });
         }
+
+        // Проверяем срок действия заявки (30 минут)
+        const rawDate = order.createdAt || order.input?.createdAt;
+        const orderTime = rawDate ? new Date(rawDate).getTime() : 0;
+        const expTime = order.output?.expDate ? new Date(order.output.expDate).getTime() : 0;
+        const isExpired = (
+            (expTime > 0 && Date.now() > expTime) ||
+            (orderTime > 0 && Date.now() - orderTime > 30 * 60 * 1000)
+        );
+        if (isExpired) {
+            console.log(`⌛ Order expired: ${orderId}`);
+            return await ctx.reply(
+                '⏳ <b>Срок действия заявки истёк</b>\n\n' +
+                'Время на оплату (30 минут) завершилось. Если средства не отправлялись, создайте новую заявку.\n\n' +
+                '💡 Если транзакция уже отправлена в блокчейн, дождитесь подтверждения сетью.',
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '💳 Пополнить баланс', callback_data: 'buy' }],
+                            [{ text: '👤 Личный кабинет', callback_data: 'profile' }]
+                        ]
+                    }
+                }
+            );
+        }
         
         // Показываем что проверяем
         await safeAnswerCbQuery(ctx, '⏳ Проверяем транзакцию...');
@@ -953,9 +979,16 @@ export async function handleProfileTransactions(ctx) {
         orders.forEach((ord, idx) => {
             const isPaid = Boolean(ord.isPaid);
             const isCanceled = ord.status === 'canceled' || ord.status === 'cancelled' || ord.output?.status === 'canceled' || ord.output?.status === 'cancelled';
-            const statusEmoji = isPaid ? '✅' : (isCanceled ? '❌' : '⏳');
-            const statusText = isPaid ? 'Оплачен' : (isCanceled ? 'Отменен' : 'Ожидает оплаты');
             const rawDate = ord.createdAt || ord.input?.createdAt || ord.paidAt;
+            const orderTime = rawDate ? new Date(rawDate).getTime() : 0;
+            const expTime = ord.output?.expDate ? new Date(ord.output.expDate).getTime() : 0;
+            const isExpired = !isPaid && !isCanceled && (
+                (expTime > 0 && Date.now() > expTime) ||
+                (orderTime > 0 && Date.now() - orderTime > 30 * 60 * 1000)
+            );
+
+            const statusEmoji = isPaid ? '✅' : (isCanceled ? '❌' : (isExpired ? '⌛' : '⏳'));
+            const statusText = isPaid ? 'Оплачен' : (isCanceled ? 'Отменен' : (isExpired ? 'Истёк' : 'Ожидает оплаты'));
             const date = rawDate
                 ? new Date(rawDate).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })
                 : '—';
@@ -989,8 +1022,17 @@ export async function handleProfileTransactions(ctx) {
             }
         }
 
-        // Если у пользователя есть ожидающие крипто-заказы, добавим кнопку быстрой проверки последнего (не отмененного)
-        const pendingCrypto = allOrders.find(o => !o.isPaid && !o.isFiat && o.orderId && o.status !== 'canceled' && o.status !== 'cancelled' && o.output?.status !== 'canceled');
+        // Кнопка быстрой проверки только для АКТИВНЫХ (не истекших, в пределах 30 минут) крипто-заказов
+        const pendingCrypto = allOrders.find(o => {
+            if (o.isPaid || o.isFiat || !o.orderId) return false;
+            if (o.status === 'canceled' || o.status === 'cancelled' || o.output?.status === 'canceled' || o.output?.status === 'cancelled') return false;
+            const rawDate = o.createdAt || o.input?.createdAt;
+            const orderTime = rawDate ? new Date(rawDate).getTime() : 0;
+            const expTime = o.output?.expDate ? new Date(o.output.expDate).getTime() : 0;
+            if (expTime > 0 && Date.now() > expTime) return false;
+            if (orderTime > 0 && Date.now() - orderTime > 30 * 60 * 1000) return false;
+            return true;
+        });
         if (pendingCrypto) {
             keyboard.inline_keyboard.push([{
                 text: '🔄 Проверить статус крипто-оплаты',
