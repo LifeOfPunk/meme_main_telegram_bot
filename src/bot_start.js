@@ -857,6 +857,7 @@ bot.action(/meme_(.+)/, async (ctx) => {
         
         // Отправляем медиа-группу и текст с кнопкой динамически из конфигурации шаблона
         try {
+            const mediaCaption = meme.media?.caption || (meme.media?.views_badge ? `*${meme.name}*\n${meme.media.views_badge}` : `*${meme.name}*`);
             const mediaItems = [];
             if (meme && meme.media) {
                 if (meme.media.video && fs.existsSync(meme.media.video)) {
@@ -869,7 +870,7 @@ bot.action(/meme_(.+)/, async (ctx) => {
                     mediaItems.push({
                         type: 'photo',
                         media: { source: meme.media.statistic },
-                        caption: meme.media.views_badge ? `*${meme.name}*\n${meme.media.views_badge}` : `*${meme.name}*`,
+                        caption: mediaCaption,
                         parse_mode: 'Markdown'
                     });
                 }
@@ -879,32 +880,151 @@ bot.action(/meme_(.+)/, async (ctx) => {
                 await ctx.replyWithMediaGroup(mediaItems);
             }
             
-            // Отправляем призыв с кнопкой
-            await ctx.reply(MESSAGES.ENTER_NAME, {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                    ]
-                }
-            });
+            if (meme.auto_generate) {
+                delete ctx.session.waitingFor;
+                ctx.session.memeId = memeId;
+                await ctx.reply(
+                    '🎬 <b>Автоматическая генерация видео</b>\n\n' +
+                    'Видео будет сгенерировано автоматически по популярному тренду.\n\n' +
+                    '👇 Нажмите кнопку ниже для запуска:',
+                    {
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🎬 Сгенерировать видео', callback_data: `generate_auto_${memeId}` }],
+                                [{ text: '🔙 Назад к каталогу', callback_data: 'catalog' }]
+                            ]
+                        }
+                    }
+                );
+            } else {
+                // Отправляем призыв с кнопкой
+                await ctx.reply(MESSAGES.ENTER_NAME, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                        ]
+                    }
+                });
+                // Устанавливаем флаг ожидания ввода имени
+                ctx.session.waitingFor = 'name';
+                ctx.session.memeId = memeId;
+            }
         } catch (mediaErr) {
             console.log('⚠️ Failed to send media files:', mediaErr.message);
-            await ctx.reply(MESSAGES.ENTER_NAME, {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🔙 Назад', callback_data: 'catalog' }]
-                    ]
-                }
-            });
+            if (meme.auto_generate) {
+                delete ctx.session.waitingFor;
+                ctx.session.memeId = memeId;
+                await ctx.reply(
+                    '🎬 <b>Автоматическая генерация видео</b>\n\n' +
+                    'Видео будет сгенерировано автоматически по популярному тренду.\n\n' +
+                    '👇 Нажмите кнопку ниже для запуска:',
+                    {
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🎬 Сгенерировать видео', callback_data: `generate_auto_${memeId}` }],
+                                [{ text: '🔙 Назад к каталогу', callback_data: 'catalog' }]
+                            ]
+                        }
+                    }
+                );
+            } else {
+                await ctx.reply(MESSAGES.ENTER_NAME, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Назад', callback_data: 'catalog' }]
+                        ]
+                    }
+                });
+                ctx.session.waitingFor = 'name';
+                ctx.session.memeId = memeId;
+            }
         }
-        
-        // Устанавливаем флаг ожидания ввода имени
-        ctx.session.waitingFor = 'name';
-        ctx.session.memeId = memeId;
         
     } catch (err) {
         console.error('❌ Error selecting meme:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
+    }
+});
+
+// Обработка кнопки запуска автоматической генерации (TASK: Чебурашка и Гена)
+bot.action(/generate_auto_(.+)/, async (ctx) => {
+    try {
+        await safeAnswerCbQuery(ctx);
+        const memeId = ctx.match[1];
+        const meme = getMemeById(memeId);
+        if (!meme) {
+            return await ctx.reply('❌ Шаблон не найден.');
+        }
+
+        const userId = ctx.from.id;
+        const user = await userService.getUser(userId);
+        const freeQuota = user?.free_quota || 0;
+        const paidQuota = user?.paid_quota || 0;
+        const walletBalance = Number(user?.wallet_balance_usdt || 0);
+
+        // Роутер квот и баланса
+        let mode = 'free';
+        if (freeQuota > 0) {
+            mode = 'free';
+        } else if (paidQuota > 0 || walletBalance >= GENERATION_COST_USDT) {
+            mode = 'paid';
+        } else {
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        }
+
+        // Если бесплатный режим - строгая проверка подписки перед списанием
+        if (mode === 'free') {
+            const isSubscribed = await subscriptionService.checkSubscription(userId);
+            if (!isSubscribed) {
+                return await ctx.reply(
+                    subscriptionService.getNotSubscribedMessage(),
+                    { reply_markup: subscriptionService.getNotSubscribedKeyboard() }
+                );
+            }
+        }
+
+        // Списываем через единый роутер
+        const deductResult = await userService.deductGenerationCost(userId);
+        if (!deductResult.success) {
+            return await ctx.reply(MESSAGES.NO_BALANCE, {
+                reply_markup: NO_BALANCE_KEYBOARD
+            });
+        }
+
+        const promptText = typeof meme.prompt === 'string' ? meme.prompt : (meme.prompt?.text || meme.prompt);
+
+        // Создаём генерацию
+        const generation = await generationService.createGeneration({
+            userId,
+            chatId: ctx.chat.id,
+            memeId: meme.id,
+            name: meme.name,
+            gender: 'male',
+            customPrompt: promptText,
+            deductedType: deductResult.type
+        });
+
+        if (generation.error) {
+            await userService.refundGenerationCost(userId, deductResult.type);
+            return await ctx.reply('❌ Ошибка создания генерации: ' + generation.error);
+        }
+
+        await ctx.reply(MESSAGES.GENERATION_STARTED(meme.name), {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '✨ Создать еще', callback_data: 'create_video' }],
+                    [{ text: '⏪ Вернуться назад', callback_data: 'main_menu' }]
+                ]
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ Error in generate_auto handler:', err);
+        await safeAnswerCbQuery(ctx, 'Произошла ошибка при запуске генерации');
     }
 });
 
