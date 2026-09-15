@@ -735,7 +735,7 @@ export async function handleReferral(ctx) {
         const rawCashback = user?.totalCashback ?? stats?.totalCashback ?? user?.affiliate_earnings ?? 0;
         message += `💰 Заработано: ${Number(rawCashback || 0).toFixed(2)} USDT`;
         
-        const inviteText = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:`;
+        const inviteText = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:\n\n👉 ${refLink}`;
         // fix: share требует url= (иначе Telegram открывает telegram.org)
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent(inviteText)}`;
         
