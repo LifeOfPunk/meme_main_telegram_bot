@@ -59,11 +59,11 @@ function getUserBalanceBreakdown(user, customFreeQuota = null) {
     const totalPaid = paidQuota + paidFromWallet;
     const totalAvailable = freeQuota + totalPaid;
 
-    let text = `📊 <b>Ваш баланс генераций:</b> ${totalAvailable} видео\n` +
-               `🎁 <b>Бесплатные генерации:</b> ${freeQuota}\n` +
-               `💎 <b>Платные генерации:</b> ${totalPaid}`;
+    let text = `📊 Ваш баланс генераций: ${totalAvailable} видео\n` +
+               `🎁 Бесплатные генерации: ${freeQuota}\n` +
+               `💎 Платные генерации: ${totalPaid}`;
     if (walletBalance > 0) {
-        text += `\n💵 <b>Баланс кошелька:</b> ${walletBalance.toFixed(2)} USDT`;
+        text += `\n💵 Баланс кошелька: ${walletBalance.toFixed(2)} USDT`;
     }
 
     return {
@@ -617,7 +617,7 @@ bot.action(/add_quota_confirm_(\d+)_(\d+)/, async (ctx) => {
         const balanceInfo = getUserBalanceBreakdown(updatedUser, newQuota);
         await notifyUserQuotaChange(
             userId,
-            `🎁 <b>Вам начислено ${amount} бесплатных генераций!</b>\n\n` +
+            `🎁 Вам начислено ${amount} бесплатных генераций!\n\n` +
             balanceInfo.notificationText
         );
     } catch (err) {
@@ -1182,7 +1182,7 @@ bot.on('text', async (ctx) => {
             const balanceInfo = getUserBalanceBreakdown(updatedUser, newQuota);
             await notifyUserQuotaChange(
                 userId,
-                `🎁 <b>Вам начислено ${amount} бесплатных генераций!</b>\n\n` +
+                `🎁 Вам начислено ${amount} бесплатных генераций!\n\n` +
                 balanceInfo.notificationText
             );
             
