@@ -37,25 +37,8 @@ export async function handleBuy(ctx) {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
-        const buyText = `Для генерации видео пополните баланс удобным способом:`;
-        
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: '💎 Криптовалюта', callback_data: 'pay_crypto_deposit' }],
-                [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
-                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
-            ]
-        };
-        
-        try {
-            await ctx.editMessageText(buyText, {
-                reply_markup: keyboard
-            });
-        } catch (editErr) {
-            await ctx.reply(buyText, {
-                reply_markup: keyboard
-            });
-        }
+        // Карта скрыта: ведём сразу на экран выбора крипто-сети (депозит, «в 1 шаг»)
+        return await handlePayCrypto(ctx, 'deposit');
     } catch (err) {
         console.error('❌ Error in handleBuy:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');

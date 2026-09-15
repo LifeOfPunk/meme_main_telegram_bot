@@ -302,7 +302,6 @@ export const MAIN_MENU_KEYBOARD = {
 export const NO_BALANCE_KEYBOARD = {
     inline_keyboard: [
         [{ text: '💎 Криптовалюта', callback_data: 'pay_crypto_deposit' }],
-        [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
         [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
     ]
 };
