@@ -259,11 +259,11 @@ ${pkg.emoji} ${pkg.title}
         const rawCashback = userData?.totalCashback ?? referralStats?.totalCashback ?? userData?.affiliate_earnings ?? 0;
         const cashbackAmount = Number(rawCashback || 0).toFixed(2);
         
+        message += `📊 Баланс: ${totalGenerations} генераций\n`;
+        message += `🎁 Бесплатные — ${availableFree}\n`;
+        message += `💎 Платные — ${totalPaid}\n`;
+        message += `💵 Кошелёк — ${walletBalance}\u00A0USDT\n\n`;
         message += `🎬 Стоимость генерации: ${GENERATION_COST_USDT.toFixed(2)}$\n\n`;
-        message += `📊 Ваш баланс генераций: ${totalGenerations} видео\n`;
-        message += `🎁 Бесплатные генерации: ${availableFree}\n`;
-        message += `💎 Платные генерации: ${totalPaid}\n`;
-        message += `💵 Баланс кошелька: ${walletBalance} USDT\n\n`;
         
         if (Number(cashbackAmount) > 0) {
             message += `💰 Доступно к выводу: ${cashbackAmount} USDT\n\n`;

@@ -974,19 +974,19 @@ export async function handleProfileTransactions(ctx) {
 
             const statusEmoji = isPaid ? '✅' : (isCanceled ? '❌' : (isExpired ? '⌛' : '⏳'));
             const statusText = isPaid ? 'Оплачен' : (isCanceled ? 'Отменен' : (isExpired ? 'Истёк' : 'Ожидает оплаты'));
+            const NBSP = '\u00A0';
             const date = rawDate
-                ? new Date(rawDate).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })
+                ? new Date(rawDate).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                 : '—';
             const displayAmount = ord.paidAmount || ord.input?.amountUSD || ord.amount || 0;
-            const amount = ord.isFiat ? `${ord.amount}₽` : `${Number(displayAmount).toFixed(2)} USDT`;
+            const amount = ord.isFiat ? `${ord.amount}₽` : `${Number(displayAmount).toFixed(2)}${NBSP}USDT`;
             const pkgTitle = ord.package === 'deposit' ? 'Пополнение баланса' : (PACKAGES[ord.package]?.title || ord.package || 'Пополнение');
             const globalIdx = startIdx + idx + 1;
             const payType = ord.isFiat ? 'Банковская карта (Lava)' : `Крипта (${ord.currency || 'USDT'})`;
 
             message += `${globalIdx}. ${statusEmoji} <b>${pkgTitle}</b> — <b>${amount}</b>\n`;
-            message += `   ├ Статус: ${statusText}\n`;
-            message += `   ├ Метод: ${payType}\n`;
-            message += `   └ 📅 ${date} (МСК)\n\n`;
+            message += `   ${statusText} · ${payType}\n`;
+            message += `   📅 ${date}\n\n`;
         });
 
         const keyboard = {
