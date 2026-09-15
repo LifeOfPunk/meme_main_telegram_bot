@@ -364,7 +364,7 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
                 console.error('❌ Crypto webhook rejected: invalid/missing signature (enforcement on)');
                 return res.status(403).json({ error: 'Invalid signature' });
             }
-            if (!sigOk) console.log('⚠️ Crypto signature not verified (enforcement off or secret unset)');
+            console.log(`🔐 Crypto signature check: ${sigOk ? '✅ Valid' : '❌ Invalid/absent'} (enforcement ${WEBHOOK_ENFORCE_AUTH ? 'ON' : 'OFF'})`);
         }
 
         let order = null;
@@ -522,9 +522,9 @@ app.get('/webhook/crypto', (req, res) => {
 // GET /webhook/analytics/clicks — отдача статистики кликов для интерактивной доски (TASK-21)
 app.get(['/webhook/analytics/clicks', '/webhook/staging/analytics/clicks', '/staging/webhook/analytics/clicks', '/api/analytics/clicks'], async (req, res) => {
     try {
-        // P2-14: закрываем публичный доступ к аналитике токеном
+        // P2-14: если ANALYTICS_TOKEN задан — требуем его; если не задан — доска открыта (вариант A).
         const analyticsToken = process.env.ANALYTICS_TOKEN;
-        if (!analyticsToken || (req.query.token !== analyticsToken && req.headers['x-analytics-token'] !== analyticsToken)) {
+        if (analyticsToken && req.query.token !== analyticsToken && req.headers['x-analytics-token'] !== analyticsToken) {
             return res.status(404).json({ error: 'Not found' });
         }
         const today = new Date().toISOString().split('T')[0];
