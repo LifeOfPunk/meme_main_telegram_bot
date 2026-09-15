@@ -413,7 +413,7 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposi
         }
 
         // Формируем экран пополнения: адрес в <code>, динамические безопасные лимиты
-        const NBSP = ' ';
+        const NBSP = '\u00A0';
         const networkLabel = isGram
             ? 'TON (The Open Network)'
             : payCurrency.replace(/^(\S+)\s+(.+)$/, '$1 ($2)');
@@ -619,7 +619,7 @@ export async function handleCheckPayment(ctx, orderId) {
             // Уведомляем пользователя
             const successText = pkg
                 ? `✅ <b>Оплата подтверждена!</b>\n\n${pkg.emoji} ${pkg.title}\n💎 Добавлено генераций: ${pkg.generations}\n\nТеперь вы можете создавать видео!`
-                : `✅ <b>Депозит успешно зачислен!</b>\n\n💰 Зачислено на баланс: <b>${depositAmount.toFixed(2)} USDT</b>\n\nТеперь вы можете создавать видео!`;
+                : `✅ <b>Депозит успешно зачислен!</b>\n\n💰 Зачислено на баланс: <b>${depositAmount.toFixed(2)}\u00A0USDT</b>\n\nТеперь вы можете создавать видео!`;
             
             await ctx.reply(
                 successText,

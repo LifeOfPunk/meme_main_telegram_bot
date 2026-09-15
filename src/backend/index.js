@@ -289,7 +289,7 @@ app.post(['/webhook/lava', '/webhook/staging/lava', '/staging/webhook/lava'], as
                           `💎 Добавлено генераций: ${pkg.generations}\n\n` +
                           `Теперь вы можете создавать видео!`
                         : `✅ Пополнение баланса картой успешно!\n\n` +
-                          `💰 Зачислено на баланс: <b>${depositUsd.toFixed(2)} USDT</b>\n\n` +
+                          `💰 Зачислено на баланс: <b>${depositUsd.toFixed(2)}\u00A0USDT</b>\n\n` +
                           `Теперь вы можете создавать видео!`;
                     
                     await botInstance.telegram.sendMessage(order.userId, message, {
@@ -459,7 +459,7 @@ app.post(['/webhook/crypto', '/webhook/staging/crypto', '/staging/webhook/crypto
                           `💰 Пополнен баланс: +${depositAmount.toFixed(2)} USDT\n\n` +
                           `Теперь вы можете создавать видео!`
                         : `✅ <b>Криптодепозит успешно зачислен!</b>\n\n` +
-                          `💰 Зачислено на баланс: <b>${depositAmount.toFixed(2)} USDT</b>\n\n` +
+                          `💰 Зачислено на баланс: <b>${depositAmount.toFixed(2)}\u00A0USDT</b>\n\n` +
                           `Теперь вы можете создавать видео!`;
                     
                     await botInstance.telegram.sendMessage(order.userId, message, {
