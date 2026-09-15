@@ -37,25 +37,8 @@ export async function handleBuy(ctx) {
     try {
         await safeAnswerCbQuery(ctx); // Убираем индикатор загрузки
         
-        const buyText = `Для генерации видео пополните баланс удобным способом:`;
-        
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: '💎 Криптовалюта', callback_data: 'pay_crypto_deposit' }],
-                [{ text: '💳 Банковская карта', callback_data: 'pay_card_packages' }],
-                [{ text: '🔙 Главное меню', callback_data: 'main_menu' }]
-            ]
-        };
-        
-        try {
-            await ctx.editMessageText(buyText, {
-                reply_markup: keyboard
-            });
-        } catch (editErr) {
-            await ctx.reply(buyText, {
-                reply_markup: keyboard
-            });
-        }
+        // Карта скрыта: ведём сразу на экран выбора крипто-сети (депозит, «в 1 шаг»)
+        return await handlePayCrypto(ctx, 'deposit');
     } catch (err) {
         console.error('❌ Error in handleBuy:', err);
         await safeAnswerCbQuery(ctx, 'Произошла ошибка');
@@ -270,9 +253,10 @@ export async function handlePayCrypto(ctx, packageKey = 'deposit') {
             `💰 <b>Свободный депозит:</b> от 2.00 USDT до 10 000.00 USDT\n` +
             `🎬 <b>Стоимость генерации:</b> ${GENERATION_COST_USDT.toFixed(2)}$\n` +
             `💵 <b>Баланс кошелька:</b> ${balanceFormatted} USDT\n\n` +
-            `Выберите сеть для оплаты в 1 шаг:`;
+            `Выберите сеть для оплаты в 1 шаг:\n\n` +
+            `🔒 Проводя оплату, вы соглашаетесь с <a href="https://aiviral.agency/dogovor-oferta/">Договором-офертой</a> и <a href="https://aiviral.agency/politika-konfidencialnosti/">Политикой конфиденциальности</a>.`;
         
-        const backTarget = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'buy';
+        const backTarget = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'main_menu';
         
         // 4 кнопки сетей сразу в 1 шаг согласно спецификации TASK-02-03
         const cryptoButtons = [
@@ -775,8 +759,9 @@ export async function handleReferral(ctx) {
         const rawCashback = user?.totalCashback ?? stats?.totalCashback ?? user?.affiliate_earnings ?? 0;
         message += `💰 Заработано: ${Number(rawCashback || 0).toFixed(2)} USDT`;
         
-        const inviteText = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик: ${refLink}`;
-        const shareUrl = `https://t.me/share/url?text=${encodeURIComponent(inviteText)}`;
+        const inviteText = `🔥 Делаю вирусные нейро-мемы и ролики за 60 секунд через ИИ!\n\nЗалетай по моей ссылке, забирай бесплатную попытку и создай свой первый вирусный ролик:`;
+        // fix: share требует url= (иначе Telegram открывает telegram.org)
+        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent(inviteText)}`;
         
         const keyboard = {
             inline_keyboard: [
