@@ -255,7 +255,7 @@ export async function handlePayCrypto(ctx, packageKey = 'deposit') {
             `💵 <b>Баланс кошелька:</b> ${balanceFormatted} USDT\n\n` +
             `Выберите сеть для оплаты в 1 шаг:`;
         
-        const backTarget = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'buy';
+        const backTarget = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'main_menu';
         
         // 4 кнопки сетей сразу в 1 шаг согласно спецификации TASK-02-03
         const cryptoButtons = [
