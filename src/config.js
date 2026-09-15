@@ -367,7 +367,7 @@ export function getMainMenuText(user) {
     const totalPaid = paidQuota + videosFromWallet;
     const totalGenerations = freeQuota + totalPaid;
 
-    const NBSP = ' ';
+    const NBSP = '\u00A0';
     return `🎬 *Добро пожаловать в ViralApp!*\n\n` +
         `Создавай вирусные персонализированные мемы и видео в лучшем качестве.\n\n` +
         `📊 *Баланс: ${totalGenerations} генераций*\n` +
