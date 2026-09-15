@@ -249,11 +249,12 @@ export async function handlePayCrypto(ctx, packageKey = 'deposit') {
         const balanceFormatted = Number(walletBalance || 0).toFixed(2);
         
         const titleText = pkg ? `🎬 <b>${pkg.title}</b> (${pkg.usdt} USDT)\n` : `💎 <b>Пополнение баланса криптовалютой</b>\n`;
+        const NBSP = `\u00A0`;
         const message = `${titleText}\n` +
-            `💰 <b>Свободный депозит:</b> от 2.00 USDT до 10 000.00 USDT\n` +
-            `🎬 <b>Стоимость генерации:</b> ${GENERATION_COST_USDT.toFixed(2)}$\n` +
-            `💵 <b>Баланс кошелька:</b> ${balanceFormatted} USDT\n\n` +
-            `Выберите сеть для оплаты в 1 шаг:\n\n` +
+            `💰 <b>Сумма:</b> от 2 до 10${NBSP}000${NBSP}USDT\n` +
+            `💵 <b>Баланс кошелька:</b> ${balanceFormatted}${NBSP}USDT\n` +
+            `🎬 <b>Стоимость генерации:</b> ${GENERATION_COST_USDT.toFixed(2)}$\n\n` +
+            `👇 Выберите сеть — оплата в 1 шаг:\n\n` +
             `🔒 Проводя оплату, вы соглашаетесь с <a href="https://aiviral.agency/dogovor-oferta/">Договором-офертой</a> и <a href="https://aiviral.agency/politika-konfidencialnosti/">Политикой конфиденциальности</a>.`;
         
         const backTarget = packageKey && packageKey !== 'deposit' ? `select_package_${packageKey}` : 'main_menu';
