@@ -367,14 +367,15 @@ export function getMainMenuText(user) {
     const totalPaid = paidQuota + videosFromWallet;
     const totalGenerations = freeQuota + totalPaid;
 
+    const NBSP = ' ';
     return `🎬 *Добро пожаловать в ViralApp!*\n\n` +
-        `Создай вирусный персонализированный мем или видео в лучшем качестве.\n` +
-        `🎬 *Стоимость генерации:* ${GENERATION_COST_USDT.toFixed(2)}$\n\n` +
-        `📊 *Ваш баланс генераций:* ${totalGenerations} видео\n` +
-        `🎁 Бесплатные генерации: ${freeQuota}\n` +
-        `💎 Платные генерации: ${totalPaid}\n` +
-        `💵 Баланс кошелька: ${balanceUsdt} USDT\n\n` +
-        `Выбери действие:`;
+        `Создавай вирусные персонализированные мемы и видео в лучшем качестве.\n\n` +
+        `📊 *Баланс: ${totalGenerations} генераций*\n` +
+        `🎁 Бесплатные — ${freeQuota}\n` +
+        `💎 Платные — ${totalPaid}\n` +
+        `💵 Кошелёк — ${balanceUsdt}${NBSP}USDT\n\n` +
+        `🎬 Стоимость генерации: ${GENERATION_COST_USDT.toFixed(2)}$\n\n` +
+        `👇 Выбери действие:`;
 }
 
 export const WATERMARK_IMAGE_PATH = process.env.WATERMARK_IMAGE_PATH || '/home/aiviral/memememe/2568-11-12_16.23.25-removebg-preview.png';

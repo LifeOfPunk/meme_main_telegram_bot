@@ -412,58 +412,33 @@ export async function handleChainSelect(ctx, crypto, chain, packageKey = 'deposi
         }
 
         // Формируем экран пополнения: адрес в <code>, динамические безопасные лимиты
-        let message = '';
-        if (isGram) {
-            message = `💎 <b>Пополнение баланса Gram (prev. Toncoin)</b>\n\n`;
-            message += `🌐 <b>Сеть:</b> <code>TON (The Open Network)</code>\n`;
-            message += `💵 <b>Монета к отправке:</b> <b>Gram (TON)</b>\n`;
-            
-            if (pkg) {
-                const pkgGrams = effectiveRate && effectiveRate > 0 ? (pkg.usdt / effectiveRate).toFixed(2) : null;
-                const pkgGramStr = pkgGrams ? ` (~${pkgGrams} Gram)` : '';
-                message += `🎬 <b>Пакет:</b> ${pkg.title} (${pkg.usdt} USDT)\n`;
-                message += `💰 <b>Сумма к оплате:</b> <b>${pkg.usdt} USDT</b>${pkgGramStr}\n\n`;
-            } else {
-                message += `💰 <b>Лимиты:</b> от ~${dynamicMinGram} Gram (2.00 USDT) до 10 000.00 USDT\n\n`;
-            }
+        const NBSP = ' ';
+        const networkLabel = isGram
+            ? 'TON (The Open Network)'
+            : payCurrency.replace(/^(\S+)\s+(.+)$/, '$1 ($2)');
+        const minUsdt = isBnb ? '4' : '2';
+        const amountLine = pkg
+            ? `${pkg.usdt}${NBSP}USDT`
+            : `от ${minUsdt} до 10${NBSP}000${NBSP}USDT`;
 
-            message += `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n`;
-            
-            if (destinationTag) {
-                message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
-            }
-            
-            message += `⚠️ <b>ВНИМАНИЕ:</b> Отправляйте <b>ТОЛЬКО нативный Gram (TON)</b>!\n`;
-            message += `<i>Платежи в USDT Jetton на этот адрес не зачисляются процессингом.</i>\n\n`;
-            message += `💡 <i>Нажмите на адрес выше, чтобы скопировать</i>\n`;
-            message += `⏰ Реквизиты активны 30 минут.\n`;
-            message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
-        } else {
-            message = `💎 <b>Пополнение баланса криптовалютой (0xProcessing)</b>\n\n`;
-            message += `🌐 <b>Сеть:</b> <code>${payCurrency}</code>\n`;
-            
-            if (pkg) {
-                message += `🎬 <b>Пакет:</b> ${pkg.title} (${pkg.usdt} USDT)\n`;
-                message += `💰 <b>Сумма к оплате:</b> <b>${pkg.usdt} USDT</b>\n\n`;
-            } else {
-                message += `💵 <b>Лимиты:</b>\n`;
-                message += `├─ <b>Min:</b> ${minNote}\n`;
-                message += `└─ <b>Max:</b> 10000.00 USDT\n\n`;
-            }
+        let message = `💎 <b>Оплата криптовалютой</b>\n\n`;
+        message += `🌐 <b>Сеть:</b> ${networkLabel}\n`;
+        message += `💰 <b>Сумма:</b> ${amountLine}\n\n`;
+        message += `📍 <b>Адрес</b> (нажмите, чтобы скопировать):\n<code>${address}</code>\n\n`;
 
-            message += `📍 <b>Адрес:</b>\n<code>${address}</code>\n\n`;
-            
-            if (destinationTag) {
-                message += `🏷️ <b>Memo/Tag:</b> <code>${destinationTag}</code>\n⚠️ <b>ТЕГ ОБЯЗАТЕЛЕН!</b> Без него средства не зачислятся.\n\n`;
-            }
-            
-            message += `⚠️ <b>ВНИМАНИЕ: Минимальная сумма пополнения — ${minNote}.</b>\n`;
-            message += `<i>Платежи меньше минимальной суммы не зачисляются блокчейном!</i>\n\n`;
-            message += `💡 <i>Нажмите на адрес выше, чтобы скопировать</i>\n`;
-            message += `⏰ Реквизиты активны 30 минут.\n`;
-            message += `👇 После отправки нажмите кнопку «Проверить оплату»`;
+        if (destinationTag) {
+            message += `🏷️ <b>Memo/Tag</b> (нажмите, чтобы скопировать):\n<code>${destinationTag}</code>\n`;
+            message += `⚠️ Тег обязателен — без него средства не зачислятся.\n\n`;
         }
-        
+
+        message += `⚠️ Минимум ${minUsdt}${NBSP}USDT — меньшие суммы блокчейн не зачислит.\n`;
+        if (isGram) {
+            message += `⚠️ Отправляйте только нативный <b>Gram${NBSP}(TON)</b>. USDT Jetton на этот адрес не зачисляется.\n`;
+        }
+        message += `❗ Отправьте оплату на этот адрес только <b>ОДИН раз</b>. Несколько переводов на один адрес засчитаются как один — не отправляйте повторно.\n`;
+        message += `⏰ Реквизиты активны 30 минут.\n\n`;
+        message += `После перевода нажмите «✅ Проверить оплату».`;
+
         const keyboard = createPaymentCryptoKeyboard(payment.orderId, packageKey, address, paymentUrl);
         
         try {
@@ -643,7 +618,7 @@ export async function handleCheckPayment(ctx, orderId) {
             // Уведомляем пользователя
             const successText = pkg
                 ? `✅ <b>Оплата подтверждена!</b>\n\n${pkg.emoji} ${pkg.title}\n💎 Добавлено генераций: ${pkg.generations}\n\nТеперь вы можете создавать видео!`
-                : `✅ <b>Депозит успешно зачислен!</b>\n\n💰 На ваш баланс зачислено: <b>${depositAmount.toFixed(2)} USDT</b>\n\nТеперь вы можете создавать видео!`;
+                : `✅ <b>Депозит успешно зачислен!</b>\n\n💰 Зачислено на баланс: <b>${depositAmount.toFixed(2)} USDT</b>\n\nТеперь вы можете создавать видео!`;
             
             await ctx.reply(
                 successText,
